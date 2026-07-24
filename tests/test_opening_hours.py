@@ -30,9 +30,29 @@ def test_report_lists_days_and_averages_excluding_partial():
     assert "1h49m" in report
     # partial day is flagged and its duration marked, but excluded from the average
     assert "Fri*" in report
-    assert "average 1h49m" in report          # only the one reliable day counts
+    # With only one reliable day, don't dress it up as an "average" — show N=1 plainly.
+    assert "from 1 open day" in report
+    assert "average 1h49m" not in report      # no fake "average" over a single day
+    assert "Open duration over" not in report  # the multi-day averaging line is absent
     assert "with an open observed: 2" in report
     assert "Thursday" in report               # by-weekday breakdown
+
+
+def test_average_only_over_open_completed_days():
+    # Two reliable open days average their durations; a no-open day and a
+    # provisional day never enter the average.
+    days = [
+        _day("2026-07-20", "Monday"),  # no open — must not count
+        _day("2026-07-21", "Tuesday", "2026-07-21T07:00:00+01:00",
+             "2026-07-21T08:00:00+01:00", 3600),   # 1h00m
+        _day("2026-07-22", "Wednesday", "2026-07-22T07:00:00+01:00",
+             "2026-07-22T09:00:00+01:00", 7200),   # 2h00m
+        _day("2026-07-23", "Thursday", "2026-07-23T07:00:00+01:00", None, 9999, partial=True),
+    ]
+    report = analyse.opening_hours_report(days)
+    assert "over 2 open days" in report        # provisional + no-open excluded from the count
+    assert "average 1h30m" in report           # (1h + 2h) / 2, not dragged down by the no-open day
+    assert "shortest 1h00m" in report and "longest 2h00m" in report
 
 
 def test_report_handles_no_data():

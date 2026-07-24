@@ -91,9 +91,12 @@ def view_command():
     click.echo()
     click.echo(f"  Days logged: {stats['days_logged']}   with an open observed: "
                + click.style(str(stats['days_with_open']), fg="green"))
-    if stats["reliable_count"]:
-        click.echo("  Open duration (reliable days): "
-                   f"average {click.style(analyse.fmt_duration(stats['avg']), fg='green', bold=True)}, "
+    n = stats["reliable_count"]  # completed days that opened; non-open and provisional days excluded
+    avg = click.style(analyse.fmt_duration(stats["avg"]), fg="green", bold=True)
+    if n == 1:
+        click.echo(f"  Open duration: {avg}  (from 1 open day so far)")
+    elif n >= 2:
+        click.echo(f"  Open duration over {n} open days: average {avg}, "
                    f"shortest {analyse.fmt_duration(stats['shortest'])}, "
                    f"longest {analyse.fmt_duration(stats['longest'])}")
     if stats["open_times"]:

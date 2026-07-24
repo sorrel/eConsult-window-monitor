@@ -241,11 +241,13 @@ def opening_hours_report(day_summaries: list[dict[str, Any]]) -> str:
     stats = opening_hours_stats(day_summaries)
     lines.append("")
     lines.append(f"  Days logged: {stats['days_logged']}   with an open observed: {stats['days_with_open']}")
-    if stats["reliable_count"]:
+    n = stats["reliable_count"]  # completed days that actually opened; non-open and provisional days excluded
+    if n == 1:
+        lines.append(f"  Open duration: {fmt_duration(stats['avg'])}  (from 1 open day so far)")
+    elif n >= 2:
         lines.append(
-            f"  Open duration (reliable days): average {fmt_duration(stats['avg'])}, "
-            f"shortest {fmt_duration(stats['shortest'])}, longest {fmt_duration(stats['longest'])}, "
-            f"total {fmt_duration(stats['total'])}"
+            f"  Open duration over {n} open days: average {fmt_duration(stats['avg'])}, "
+            f"shortest {fmt_duration(stats['shortest'])}, longest {fmt_duration(stats['longest'])}"
         )
     if stats["open_times"]:
         lines.append(f"  Open times seen: {', '.join(stats['open_times'])}")
