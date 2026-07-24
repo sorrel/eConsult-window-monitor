@@ -1,0 +1,29 @@
+[project]
+name = "econsult-window-monitor"
+version = "0.1.0"
+description = "Read-only monitor of a GP eConsult clinical submission window (Phase 0)"
+requires-python = ">=3.12"
+# The daemon/runtime is standard-library-only; Click is used solely for the
+# `econsult` presentation CLI, matching the sibling tools' idiom.
+dependencies = ["click>=8.0.0"]
+
+[project.scripts]
+econsult = "monitor.cli:cli"
+
+[dependency-groups]
+dev = ["pytest>=8.0"]
+# Isolated, optional: only the one-off read-only flow walker needs a browser.
+capture = ["playwright>=1.40"]
+
+# `src` holds the shippable package (monitor); "." keeps the repo-local,
+# un-packaged flow_capture tool importable in tests.
+[tool.pytest.ini_options]
+pythonpath = ["src", "."]
+testpaths = ["tests"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/monitor"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
