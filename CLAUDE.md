@@ -35,9 +35,11 @@ Shares the design ethos of the sibling projects under `scripts/`:
   dependency; `playwright` is an optional group for the dormant flow walker.
   Run everything via `uv run …` (e.g. `uv run econsult view`).
 - **British English** throughout (code, comments, output, docs).
-- **Git:** no remote yet, so commit straight to `main` for now. Once a remote is
-  added, switch to feature branches (`feature/…`, `bugfix/…`) and stop committing
-  directly to `main`.
+- **Git: feature branches only — never commit directly to `main`.** The remote is
+  `github.com/sorrel/eConsult-window-monitor` (public). Branch first
+  (`feature/…`, `bugfix/…`, `docs/…`), commit there, then open a PR to merge.
+  Keep in mind the repo is public: check anything new for identifying content
+  before it goes up.
 - **Nothing that identifies the user or machine in committed file contents** — no
   real email, username, hostname, or `/Users/<name>/…` path. Commits are signed
   as normal (that attribution is deliberate and fine).
