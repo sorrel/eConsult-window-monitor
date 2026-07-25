@@ -116,3 +116,8 @@ docs/           design notes and implementation plan
 
 The runtime is standard-library-only for auditability; [Click](https://click.palletsprojects.com/)
 is the single runtime dependency, used purely for the presentation CLI.
+
+## 📄 Licence
+
+[MIT](LICENSE) — anyone is free to copy, change, and reuse this, commercially or
+otherwise. Just keep the copyright notice with it. No warranty of any kind.
