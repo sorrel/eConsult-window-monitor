@@ -1,0 +1,17 @@
+# Routine version bumps. Dependabot security updates are already on and are
+# separate from this — they fire on an advisory regardless of schedule.
+#
+# The runtime is deliberately near-dependency-free (Click only; the daemon
+# itself is standard-library), so this stays quiet by design. Grouped into a
+# single PR so a quiet repo doesn't turn into a stream of noise.
+version: 2
+updates:
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    groups:
+      python-dependencies:
+        patterns: ["*"]
+    commit-message:
+      prefix: "deps"
