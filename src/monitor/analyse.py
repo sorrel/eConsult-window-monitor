@@ -8,7 +8,7 @@ reads the JSONL log and prints.
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 from . import config
@@ -216,6 +216,147 @@ def block_cells(block: dict[str, Any]) -> tuple[str, str]:
     if reason == "ongoing":
         return "still open", "≥ " + fmt_duration(block["duration"])
     return "lost", "≥ " + fmt_duration(block["duration"])  # fetches failed before a close
+
+
+def day_total_open(summary: dict[str, Any]) -> tuple[int | None, bool]:
+    """A day's total observed open time, and whether that total can be trusted.
+
+    Sums every open block, so a day that reopened counts all of its open time,
+    not just the first stretch. The total is *reliable* only when the day is
+    complete and every block was seen to close — a 'lost' or 'ongoing' block,
+    or a partial day, makes it a floor rather than a fact. Returns
+    ``(None, False)`` for a day on which nothing was ever seen open.
+    """
+    blocks = _display_blocks(summary)
+    if not blocks:
+        return None, False
+    total = sum(b["duration"] or 0 for b in blocks)
+    reliable = (
+        not summary.get("partial")
+        and all(b.get("end_reason") == "closed" for b in blocks)
+    )
+    return total, reliable
+
+
+def week_start(day: str) -> str:
+    """The Monday of the week containing this local date (British week, Monday-first)."""
+    d = date.fromisoformat(day)
+    return (d - timedelta(days=d.weekday())).isoformat()
+
+
+def weekday_stats(day_summaries: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Per-weekday averages of total open time, across all the weeks logged.
+
+    Each weekday entry carries the honest denominators alongside the average:
+    ``days`` counted, ``weeks`` those days span, ``floors`` (days left out
+    because a block was lost or the day was partial) and ``no_open`` (days on
+    which the window was never seen open at all).
+    """
+    counted: dict[str, list[int]] = defaultdict(list)
+    weeks: dict[str, set[str]] = defaultdict(set)
+    floors: dict[str, int] = defaultdict(int)
+    no_open: dict[str, int] = defaultdict(int)
+    starts: dict[str, set[str]] = defaultdict(set)
+
+    for summary in day_summaries:
+        weekday = summary.get("weekday") or "?"
+        opened = summary.get("first_open_local")
+        if opened:
+            starts[weekday].add(opened[11:16])
+        total, reliable = day_total_open(summary)
+        if total is None:
+            no_open[weekday] += 1
+        elif reliable:
+            counted[weekday].append(total)
+            weeks[weekday].add(week_start(summary["date"]))
+        else:
+            floors[weekday] += 1
+
+    seen = set(counted) | set(floors) | set(no_open) | set(starts)
+    return {
+        weekday: {
+            "avg": sum(counted[weekday]) // len(counted[weekday]) if counted[weekday] else None,
+            "days": len(counted[weekday]),
+            "weeks": len(weeks[weekday]),
+            "floors": floors[weekday],
+            "no_open": no_open[weekday],
+            "starts": sorted(starts[weekday]),
+        }
+        for weekday in seen
+    }
+
+
+def latest_week(day_summaries: list[dict[str, Any]]) -> tuple[str | None, list[dict[str, Any]]]:
+    """(Monday, that week's summaries) for the most recent week with any data."""
+    dated = [s for s in day_summaries if s.get("date")]
+    if not dated:
+        return None, []
+    monday = week_start(max(s["date"] for s in dated))
+    week = sorted((s for s in dated if week_start(s["date"]) == monday), key=lambda s: s["date"])
+    return monday, week
+
+
+def _pretty_date(day: str) -> str:
+    """'2026-07-27' -> '27 Jul', for the week heading."""
+    return date.fromisoformat(day).strftime("%-d %b")
+
+
+def weekly_report(day_summaries: list[dict[str, Any]]) -> str:
+    """Plain-text weekly view: the day-of-week pattern, then the latest week."""
+    lines = ["Opening hours — the weekly pattern, averaged across the weeks logged", ""]
+    lines.append(f"  {'Day':10}  {'Avg open':10}  {'Opens at':10}  {'Days':5}  {'Weeks':5}")
+    lines.append(f"  {'-'*10}  {'-'*10}  {'-'*10}  {'-'*5}  {'-'*5}")
+
+    stats = weekday_stats(day_summaries)
+    for weekday in _WEEKDAY_ORDER:
+        if weekday not in stats:
+            continue
+        row = stats[weekday]
+        avg = fmt_duration(row["avg"]) if row["days"] else "—"
+        opens = ", ".join(row["starts"]) if row["starts"] else "—"
+        note = _weekday_note(row)
+        lines.append(f"  {weekday:10}  {avg:10}  {opens:10}  {row['days']:<5}  {row['weeks']:<5}{note}")
+
+    monday, week = latest_week(day_summaries)
+    if week:
+        span = f"{_pretty_date(monday)} – {_pretty_date(week[-1]['date'])}"
+        lines.append("")
+        lines.append(f"  Latest week ({span})")
+        lines.append(f"  {'Date':10}  {'Day':9}  {'Opened':8}  {'Closed':10}  {'Open for':10}")
+        lines.append(f"  {'-'*10}  {'-'*9}  {'-'*8}  {'-'*10}  {'-'*10}")
+        for line in _week_table_lines(week):
+            lines.append(line)
+
+    lines.append("")
+    lines.append(f"  {len(day_summaries)} day(s) logged in total.  "
+                 "Run 'econsult view -x' for every day.")
+    return "\n".join(lines)
+
+
+def _weekday_note(row: dict[str, Any]) -> str:
+    """The caveat that keeps a weekday average honest — what it left out."""
+    notes = []
+    if row["floors"]:
+        notes.append(f"{row['floors']} day(s) excluded — gap or in progress")
+    if row["no_open"]:
+        notes.append(f"{row['no_open']} day(s) never seen open")
+    return "  (" + "; ".join(notes) + ")" if notes else ""
+
+
+def _week_table_lines(week: list[dict[str, Any]]) -> list[str]:
+    """The day-by-day rows for one week, in the same shape as the full table."""
+    lines = []
+    for row in opening_hours_rows(week):
+        day_cell = row["weekday"][:3] + ("*" if row["partial"] else "")
+        if not row["blocks"]:
+            lines.append(f"  {row['date']:10}  {day_cell:9}  {'—':8}  {'—':10}  {'—':10}")
+            continue
+        for i, block in enumerate(row["blocks"]):
+            closed, dur = block_cells(block)
+            note = "" if i == 0 else "  (reopened)"
+            lines.append(f"  {row['date'] if i == 0 else '':10}  {day_cell if i == 0 else '':9}  "
+                         f"{block['opened']:8}  {closed:10}  {dur:10}{note}")
+    return lines
 
 
 def opening_hours_report(day_summaries: list[dict[str, Any]]) -> str:

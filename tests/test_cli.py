@@ -21,12 +21,58 @@ def test_view_renders_a_day(tmp_path, monkeypatch):
     }, summary)
     monkeypatch.setattr(config, "SUMMARY_PATH", summary)
     monkeypatch.setattr(config, "LOG_PATH", tmp_path / "obs.jsonl")
-    result = CliRunner().invoke(cli.cli, ["view"])
+    result = CliRunner().invoke(cli.cli, ["view", "-x"])
     assert result.exit_code == 0
     assert "eConsult opening hours" in result.output
     assert "2026-07-23" in result.output
     assert "1h49m" in result.output
     assert "Thursday" in result.output
+
+
+def test_view_defaults_to_the_weekly_pattern(tmp_path, monkeypatch):
+    # Two Thursdays a week apart plus one Friday: the default view averages by
+    # weekday and shows only the latest week day by day.
+    summary = tmp_path / "summary.jsonl"
+    for date_str, weekday, secs in [("2026-07-23", "Thursday", 3600),
+                                    ("2026-07-30", "Thursday", 7200),
+                                    ("2026-07-31", "Friday", 5400)]:
+        store.append_json({
+            "date": date_str, "weekday": weekday,
+            "first_open_local": f"{date_str}T07:00:00+01:00",
+            "open_blocks": [{
+                "start_local": f"{date_str}T07:00:00+01:00",
+                "end_local": f"{date_str}T08:00:00+01:00",
+                "end_reason": "closed", "duration_seconds": secs,
+            }],
+        }, summary)
+    monkeypatch.setattr(config, "SUMMARY_PATH", summary)
+    monkeypatch.setattr(config, "LOG_PATH", tmp_path / "obs.jsonl")
+
+    result = CliRunner().invoke(cli.cli, ["view"])
+    assert result.exit_code == 0
+    assert "weekly pattern" in result.output
+    assert "1h30m" in result.output              # the two Thursdays, averaged
+    assert "Latest week" in result.output
+    assert "2026-07-30" in result.output         # in the latest week
+    assert "2026-07-23" not in result.output     # an earlier week: only in the average
+
+
+def test_view_x_shows_every_day(tmp_path, monkeypatch):
+    summary = tmp_path / "summary.jsonl"
+    for date_str, weekday in [("2026-07-23", "Thursday"), ("2026-07-30", "Thursday")]:
+        store.append_json({
+            "date": date_str, "weekday": weekday,
+            "first_open_local": f"{date_str}T07:00:00+01:00",
+            "closed_after_open_local": f"{date_str}T08:00:00+01:00",
+            "open_duration_seconds": 3600,
+        }, summary)
+    monkeypatch.setattr(config, "SUMMARY_PATH", summary)
+    monkeypatch.setattr(config, "LOG_PATH", tmp_path / "obs.jsonl")
+
+    result = CliRunner().invoke(cli.cli, ["view", "-x"])
+    assert result.exit_code == 0
+    assert "2026-07-23" in result.output and "2026-07-30" in result.output
+    assert "weekly pattern" not in result.output
 
 
 def test_status_with_no_data(tmp_path, monkeypatch):
