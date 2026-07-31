@@ -57,19 +57,61 @@ def cli():
 
 
 @cli.command("view")
-def view_command():
-    """Day-by-day opening hours, with running averages."""
+@click.option("-x", "--everything", "everything", is_flag=True,
+              help="Show every logged day rather than the weekly summary.")
+def view_command(everything):
+    """Weekly opening-hours pattern (-x for every logged day)."""
     days = opening_hours.assemble_days()
     if not days:
         click.echo("No days logged yet. The monitor writes to data/observations.jsonl.")
         return
+    if everything:
+        _render_all_days(days)
+    else:
+        _render_weekly(days)
 
-    click.echo(click.style("eConsult opening hours", fg="green", bold=True))
+
+def _render_weekly(days):
+    """Day-of-week averages across the weeks logged, then the latest week in full."""
+    click.echo(click.style("eConsult opening hours — weekly pattern", fg="green", bold=True))
     click.echo()
-    header = f"  {'Date':10}  {'Day':6}  {'Opened':8}  {'Closed':10}  {'Open for':10}"
+    header = f"  {'Day':10}  {'Avg open':10}  {'Opens at':10}  {'Days':5}  {'Weeks':5}"
     click.echo(click.style(header, fg="cyan", bold=True))
-    click.echo(click.style("  " + "-" * 54, fg="bright_black"))
+    click.echo(click.style("  " + "-" * 50, fg="bright_black"))
 
+    stats = analyse.weekday_stats(days)
+    for weekday in analyse._WEEKDAY_ORDER:
+        if weekday not in stats:
+            continue
+        row = stats[weekday]
+        opens = ", ".join(row["starts"]) if row["starts"] else "—"
+        note = analyse._weekday_note(row)
+        if row["days"]:
+            avg = click.style(f"{analyse.fmt_duration(row['avg']):10}", fg="green", bold=True)
+            line = (f"  {weekday:10}  {avg}  {opens:10}  {row['days']:<5}  {row['weeks']:<5}"
+                    + click.style(note, fg="bright_black"))
+            click.echo(line)
+        else:   # never seen open, or every day of it excluded — dimmed, not hidden
+            line = f"  {weekday:10}  {'—':10}  {opens:10}  {row['days']:<5}  {row['weeks']:<5}{note}"
+            click.echo(click.style(line, fg="bright_black"))
+
+    monday, week = analyse.latest_week(days)
+    if week:
+        span = f"{analyse._pretty_date(monday)} – {analyse._pretty_date(week[-1]['date'])}"
+        click.echo()
+        click.echo(click.style(f"  Latest week ({span})", fg="green", bold=True))
+        header = f"  {'Date':10}  {'Day':6}  {'Opened':8}  {'Closed':10}  {'Open for':10}"
+        click.echo(click.style(header, fg="cyan", bold=True))
+        click.echo(click.style("  " + "-" * 54, fg="bright_black"))
+        _render_day_rows(week)
+
+    click.echo()
+    click.echo(click.style(f"  {len(days)} day(s) logged in total.  "
+                           "Use -x to see every day.", fg="bright_black"))
+
+
+def _render_day_rows(days):
+    """The shared day-by-day table body — one line per open block."""
     for row in analyse.opening_hours_rows(days):
         day_cell = row["weekday"][:3] + ("*" if row["partial"] else "")
         if not row["blocks"]:
@@ -86,6 +128,17 @@ def view_command():
                 click.echo(click.style(line, fg="yellow"))     # today / gap — provisional
             else:
                 click.echo(click.style(line, fg="green"))      # a clean, reliable day
+
+
+def _render_all_days(days):
+    """Every logged day, with running averages — the original full view."""
+    click.echo(click.style("eConsult opening hours", fg="green", bold=True))
+    click.echo()
+    header = f"  {'Date':10}  {'Day':6}  {'Opened':8}  {'Closed':10}  {'Open for':10}"
+    click.echo(click.style(header, fg="cyan", bold=True))
+    click.echo(click.style("  " + "-" * 54, fg="bright_black"))
+
+    _render_day_rows(days)
 
     stats = analyse.opening_hours_stats(days)
     click.echo()

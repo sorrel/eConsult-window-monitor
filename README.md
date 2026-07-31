@@ -44,7 +44,8 @@ echo "https://your-surgery.example.com" > target_url.local
 
 uv run python -m monitor.poll      # a single poll
 uv run python -m monitor.daemon    # continuous monitoring
-uv run econsult view               # what we've learnt so far
+uv run econsult view               # the weekly pattern, by day of the week
+uv run econsult view -x            # every logged day
 uv run pytest                      # tests
 ```
 

@@ -1,13 +1,17 @@
 """Running, day-by-day record of the clinical eConsult window's opening hours.
 
-Reads the daily summaries (completed days) plus today's raw log, and prints a
-table of open / close / duration per day with running averages and a
-by-weekday breakdown. Today is marked partial (in progress), so its duration is
-shown but excluded from the averages.
+Reads the daily summaries (completed days) plus today's raw log. By default it
+prints the weekly pattern — total open time averaged per day of the week across
+the weeks logged, then the latest week day by day. With `-x` it prints every
+logged day instead, with running averages. Today is marked partial (in
+progress), so its duration is shown but excluded from the averages.
 
-    uv run python -m monitor.opening_hours
+    uv run python -m monitor.opening_hours       # weekly pattern
+    uv run python -m monitor.opening_hours -x    # every logged day
 """
 from __future__ import annotations
+
+import sys
 
 from . import analyse
 from . import config
@@ -30,7 +34,10 @@ def assemble_days() -> list[dict]:
 
 
 def main() -> None:
-    print(analyse.opening_hours_report(assemble_days()))
+    """Weekly pattern by default; `-x` for every logged day — mirrors `econsult view`."""
+    days = assemble_days()
+    print(analyse.opening_hours_report(days) if "-x" in sys.argv
+          else analyse.weekly_report(days))
 
 
 if __name__ == "__main__":
