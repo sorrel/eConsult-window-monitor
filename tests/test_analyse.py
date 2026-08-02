@@ -97,14 +97,19 @@ def test_analyse_reads_from_jsonl_log(tmp_path):
     assert analyse.first_open_by_day(records) == [("2026-07-22", "2026-07-22T07:00:00+01:00")]
 
 
-def _day_summary(date_str, weekday, blocks, partial=False):
-    """A daily summary carrying explicit open blocks, for the weekly tests."""
+def _day_summary(date_str, weekday, blocks, partial=False, first_poll="00:01:00"):
+    """A daily summary carrying explicit open blocks, for the weekly tests.
+
+    `first_poll` is the day's first observation — by default just after midnight,
+    i.e. a day watched right through the morning window."""
     summary = {"date": date_str, "weekday": weekday, "open_blocks": [
         {"start_local": f"{date_str}T{start}+01:00",
          "end_local": f"{date_str}T{end}+01:00",
          "end_reason": reason, "duration_seconds": secs}
         for start, end, reason, secs in blocks
     ]}
+    if first_poll:
+        summary["first_poll_local"] = f"{date_str}T{first_poll}+01:00"
     if summary["open_blocks"]:
         summary["first_open_local"] = summary["open_blocks"][0]["start_local"]
     if partial:
@@ -164,6 +169,36 @@ def test_weekday_stats_flags_days_left_out_of_the_average():
     assert stats["Saturday"]["days"] == 0
     assert stats["Saturday"]["no_open"] == 1
     assert stats["Saturday"]["avg"] is None
+
+
+def test_weekday_stats_does_not_call_a_day_still_in_progress_never_open():
+    # Today, nothing open yet: that is 'not yet', not 'never seen open'.
+    days = [_day_summary("2026-08-02", "Sunday", [], partial=True)]
+    stats = analyse.weekday_stats(days)
+    assert stats["Sunday"]["no_open"] == 0
+    assert stats["Sunday"]["floors"] == 1
+
+
+def test_weekday_stats_excludes_a_day_whose_watch_began_after_the_window():
+    # Monitoring started that evening — the morning was never observed, so the
+    # day is no evidence that the window did not open.
+    days = [_day_summary("2026-07-22", "Wednesday", [], first_poll="23:10:00")]
+    stats = analyse.weekday_stats(days)
+    assert stats["Wednesday"]["no_open"] == 0
+    assert stats["Wednesday"]["floors"] == 1
+
+
+def test_weekday_stats_excludes_a_day_of_unknown_coverage():
+    # An older summary that recorded no coverage at all: nothing to assert.
+    days = [_day_summary("2026-07-22", "Wednesday", [], first_poll=None)]
+    assert analyse.weekday_stats(days)["Wednesday"]["no_open"] == 0
+
+
+def test_weekday_stats_still_reports_a_watched_day_that_never_opened():
+    days = [_day_summary("2026-07-25", "Saturday", [])]
+    stats = analyse.weekday_stats(days)
+    assert stats["Saturday"]["no_open"] == 1
+    assert stats["Saturday"]["floors"] == 0
 
 
 def test_latest_week_is_the_monday_first_week_of_the_newest_day():
