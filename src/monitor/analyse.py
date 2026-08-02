@@ -238,6 +238,23 @@ def day_total_open(summary: dict[str, Any]) -> tuple[int | None, bool]:
     return total, reliable
 
 
+def opening_was_watched(summary: dict[str, Any]) -> bool:
+    """Were we already polling on this day before the window could have opened?
+
+    'Never seen open' is only a finding if we were watching at the time. Coverage
+    comes from the day's first poll (or, for summaries written before that field
+    existed, its earliest recorded transition). A day whose watch began after the
+    dense morning band — or whose coverage is unrecorded — says nothing either
+    way, and is excluded rather than counted as a day the window stayed shut.
+    """
+    first = summary.get("first_poll_local")
+    if first is None:
+        first = min((t["at_local"] for t in summary.get("transitions") or []), default=None)
+    if first is None:
+        return False
+    return first[11:16] <= config.DENSE_START
+
+
 def week_start(day: str) -> str:
     """The Monday of the week containing this local date (British week, Monday-first)."""
     d = date.fromisoformat(day)
@@ -248,9 +265,10 @@ def weekday_stats(day_summaries: list[dict[str, Any]]) -> dict[str, dict[str, An
     """Per-weekday averages of total open time, across all the weeks logged.
 
     Each weekday entry carries the honest denominators alongside the average:
-    ``days`` counted, ``weeks`` those days span, ``floors`` (days left out
-    because a block was lost or the day was partial) and ``no_open`` (days on
-    which the window was never seen open at all).
+    ``days`` counted, ``weeks`` those days span, ``floors`` (days left out —
+    a block was lost, the day is still in progress, or we weren't watching when
+    the window would have opened) and ``no_open`` (days we watched right through
+    the morning and the window was never seen open at all).
     """
     counted: dict[str, list[int]] = defaultdict(list)
     weeks: dict[str, set[str]] = defaultdict(set)
@@ -265,7 +283,12 @@ def weekday_stats(day_summaries: list[dict[str, Any]]) -> dict[str, dict[str, An
             starts[weekday].add(opened[11:16])
         total, reliable = day_total_open(summary)
         if total is None:
-            no_open[weekday] += 1
+            # Nothing seen open — a finding only if we watched the whole morning;
+            # otherwise (today so far, or a day we started logging late) excluded.
+            if summary.get("partial") or not opening_was_watched(summary):
+                floors[weekday] += 1
+            else:
+                no_open[weekday] += 1
         elif reliable:
             counted[weekday].append(total)
             weeks[weekday].add(week_start(summary["date"]))

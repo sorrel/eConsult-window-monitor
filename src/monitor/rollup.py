@@ -116,6 +116,10 @@ def summarise_day(records: list[Record], date: str) -> dict[str, Any]:
         "weekday": datetime.fromisoformat(date).strftime("%A"),
         "polls": len(day),
         "clinical_polls": len(clinical),
+        # Coverage: when the watch began and ended, so a day with no open can be
+        # told apart from a day we simply weren't watching.
+        "first_poll_local": min((r["ts_local"] for r in day), default=None),
+        "last_poll_local": max((r["ts_local"] for r in day), default=None),
         "states": _count_states(day),
         "unknowns": sum(1 for r in day if r["state"] == "unknown"),
         "admin_closed_seen": any(r["route"] == _ADMIN and r["state"] == "closed" for r in day),
