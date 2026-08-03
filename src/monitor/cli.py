@@ -104,9 +104,9 @@ def _render_weekly(days):
             line = f"  {weekday:10}  {cell:10}  {opens:10}  {row['days']:<5}  {row['weeks']:<5}{note}"
             click.echo(click.style(line, fg="bright_black"))
 
-    monday, week = analyse.latest_week(days)
+    start, week = analyse.recent_weekdays(days)
     if week:
-        span = f"{analyse._pretty_date(monday)} – {analyse._pretty_date(week[-1]['date'])}"
+        span = f"{analyse._pretty_date(start)} – {analyse._pretty_date(week[-1]['date'])}"
         click.echo()
         click.echo(click.style(f"  Latest week ({span})", fg="green", bold=True))
         header = f"  {'Date':10}  {'Day':6}  {'Opened':8}  {'Closed':10}  {'Open for':10}"
