@@ -86,13 +86,22 @@ def _render_weekly(days):
         row = stats[weekday]
         opens = ", ".join(row["starts"]) if row["starts"] else "—"
         note = analyse._weekday_note(row)
+        cell = analyse.weekday_avg_cell(row)
         if row["days"]:
-            avg = click.style(f"{analyse.fmt_duration(row['avg']):10}", fg="green", bold=True)
+            avg = click.style(f"{cell:10}", fg="green", bold=True)
             line = (f"  {weekday:10}  {avg}  {opens:10}  {row['days']:<5}  {row['weeks']:<5}"
                     + click.style(note, fg="bright_black"))
             click.echo(line)
-        else:   # never seen open, or every day of it excluded — dimmed, not hidden
-            line = f"  {weekday:10}  {'—':10}  {opens:10}  {row['days']:<5}  {row['weeks']:<5}{note}"
+        elif row["floor_avg"] is not None:
+            # No day seen right through, but we know a floor: yellow, as the day
+            # table does for a figure that is real but not final.
+            avg = click.style(f"{cell:10}", fg="yellow", bold=True)
+            line = (click.style(f"  {weekday:10}  ", fg="bright_black") + avg
+                    + click.style(f"  {opens:10}  {row['days']:<5}  {row['weeks']:<5}{note}",
+                                  fg="bright_black"))
+            click.echo(line)
+        else:   # never seen open, or nothing observed at all — dimmed, not hidden
+            line = f"  {weekday:10}  {cell:10}  {opens:10}  {row['days']:<5}  {row['weeks']:<5}{note}"
             click.echo(click.style(line, fg="bright_black"))
 
     monday, week = analyse.latest_week(days)

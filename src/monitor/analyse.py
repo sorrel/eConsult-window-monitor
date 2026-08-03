@@ -265,15 +265,18 @@ def weekday_stats(day_summaries: list[dict[str, Any]]) -> dict[str, dict[str, An
     """Per-weekday averages of total open time, across all the weeks logged.
 
     Each weekday entry carries the honest denominators alongside the average:
-    ``days`` counted, ``weeks`` those days span, ``floors`` (days left out —
-    a block was lost, the day is still in progress, or we weren't watching when
-    the window would have opened) and ``no_open`` (days we watched right through
-    the morning and the window was never seen open at all).
+    ``days`` counted, ``weeks`` those days span, and three ways a day can fall
+    outside the average — ``floors`` (seen open, but never seen to close, so its
+    time is a lower bound; ``floor_avg`` is the mean of those bounds),
+    ``no_open`` (we watched right through the morning and it never opened) and
+    ``unknown`` (nothing seen open and we weren't watching, which asserts
+    nothing either way).
     """
     counted: dict[str, list[int]] = defaultdict(list)
     weeks: dict[str, set[str]] = defaultdict(set)
-    floors: dict[str, int] = defaultdict(int)
+    floors: dict[str, list[int]] = defaultdict(list)
     no_open: dict[str, int] = defaultdict(int)
+    unknown: dict[str, int] = defaultdict(int)
     starts: dict[str, set[str]] = defaultdict(set)
 
     for summary in day_summaries:
@@ -284,25 +287,29 @@ def weekday_stats(day_summaries: list[dict[str, Any]]) -> dict[str, dict[str, An
         total, reliable = day_total_open(summary)
         if total is None:
             # Nothing seen open — a finding only if we watched the whole morning;
-            # otherwise (today so far, or a day we started logging late) excluded.
+            # otherwise (today so far, or a day we started logging late) it is
+            # simply an absence of data, with no floor to state.
             if summary.get("partial") or not opening_was_watched(summary):
-                floors[weekday] += 1
+                unknown[weekday] += 1
             else:
                 no_open[weekday] += 1
         elif reliable:
             counted[weekday].append(total)
             weeks[weekday].add(week_start(summary["date"]))
         else:
-            floors[weekday] += 1
+            floors[weekday].append(total)
 
-    seen = set(counted) | set(floors) | set(no_open) | set(starts)
+    seen = set(counted) | set(floors) | set(no_open) | set(unknown) | set(starts)
     return {
         weekday: {
             "avg": sum(counted[weekday]) // len(counted[weekday]) if counted[weekday] else None,
             "days": len(counted[weekday]),
             "weeks": len(weeks[weekday]),
-            "floors": floors[weekday],
+            "floors": len(floors[weekday]),
+            "floor_avg": (sum(floors[weekday]) // len(floors[weekday])
+                          if floors[weekday] else None),
             "no_open": no_open[weekday],
+            "unknown": unknown[weekday],
             "starts": sorted(starts[weekday]),
         }
         for weekday in seen
@@ -335,7 +342,7 @@ def weekly_report(day_summaries: list[dict[str, Any]]) -> str:
         if weekday not in stats:
             continue
         row = stats[weekday]
-        avg = fmt_duration(row["avg"]) if row["days"] else "—"
+        avg = weekday_avg_cell(row)
         opens = ", ".join(row["starts"]) if row["starts"] else "—"
         note = _weekday_note(row)
         lines.append(f"  {weekday:10}  {avg:10}  {opens:10}  {row['days']:<5}  {row['weeks']:<5}{note}")
@@ -356,11 +363,28 @@ def weekly_report(day_summaries: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def weekday_avg_cell(row: dict[str, Any]) -> str:
+    """The 'Avg open' figure for a weekday: the average of the days seen right
+    through, or — failing that — the floor we can still stand behind."""
+    if row["days"]:
+        return fmt_duration(row["avg"])
+    if row["floor_avg"] is not None:
+        return "≥ " + fmt_duration(row["floor_avg"])
+    return "—"
+
+
 def _weekday_note(row: dict[str, Any]) -> str:
-    """The caveat that keeps a weekday average honest — what it left out."""
+    """The caveat that keeps a weekday average honest — what it left out.
+
+    A day never seen to close still says something ('open at least this long'),
+    so it is reported with its floor rather than as a bare exclusion count."""
     notes = []
     if row["floors"]:
-        notes.append(f"{row['floors']} day(s) excluded — gap or in progress")
+        floor = fmt_duration(row["floor_avg"])
+        counted = ", not counted" if row["days"] else ""
+        notes.append(f"{row['floors']} day(s) open ≥ {floor}{counted}")
+    if row["unknown"]:
+        notes.append(f"{row['unknown']} day(s) no data — gap or in progress")
     if row["no_open"]:
         notes.append(f"{row['no_open']} day(s) never seen open")
     return "  (" + "; ".join(notes) + ")" if notes else ""

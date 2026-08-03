@@ -28,7 +28,7 @@ def test_user_agent_has_no_email():
 
 def test_cadence_values():
     assert config.DENSE_START == "05:30"
-    assert config.DENSE_END == "09:00"
+    assert config.DENSE_END == "10:00"
     assert config.DENSE_INTERVAL == 20
     assert config.BACKGROUND_INTERVAL == 1200
     assert config.ADMIN_INTERVAL == 1200
