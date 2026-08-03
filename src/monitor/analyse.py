@@ -316,14 +316,27 @@ def weekday_stats(day_summaries: list[dict[str, Any]]) -> dict[str, dict[str, An
     }
 
 
-def latest_week(day_summaries: list[dict[str, Any]]) -> tuple[str | None, list[dict[str, Any]]]:
-    """(Monday, that week's summaries) for the most recent week with any data."""
+def recent_weekdays(day_summaries: list[dict[str, Any]],
+                    span: int = 5) -> tuple[str | None, list[dict[str, Any]]]:
+    """(first date shown, summaries) for the last ``span`` weekdays with data.
+
+    A rolling window, not the calendar week: counting back from the newest day
+    logged and skipping Saturdays and Sundays, so a Monday still shows the
+    previous Tuesday–Friday alongside it rather than sitting on its own.
+    """
     dated = [s for s in day_summaries if s.get("date")]
     if not dated:
         return None, []
-    monday = week_start(max(s["date"] for s in dated))
-    week = sorted((s for s in dated if week_start(s["date"]) == monday), key=lambda s: s["date"])
-    return monday, week
+
+    day = date.fromisoformat(max(s["date"] for s in dated))
+    window: set[str] = set()
+    while len(window) < span:
+        if day.weekday() < 5:                     # Monday–Friday only
+            window.add(day.isoformat())
+        day -= timedelta(days=1)
+
+    week = sorted((s for s in dated if s["date"] in window), key=lambda s: s["date"])
+    return (week[0]["date"] if week else None), week
 
 
 def _pretty_date(day: str) -> str:
@@ -347,9 +360,9 @@ def weekly_report(day_summaries: list[dict[str, Any]]) -> str:
         note = _weekday_note(row)
         lines.append(f"  {weekday:10}  {avg:10}  {opens:10}  {row['days']:<5}  {row['weeks']:<5}{note}")
 
-    monday, week = latest_week(day_summaries)
+    start, week = recent_weekdays(day_summaries)
     if week:
-        span = f"{_pretty_date(monday)} – {_pretty_date(week[-1]['date'])}"
+        span = f"{_pretty_date(start)} – {_pretty_date(week[-1]['date'])}"
         lines.append("")
         lines.append(f"  Latest week ({span})")
         lines.append(f"  {'Date':10}  {'Day':9}  {'Opened':8}  {'Closed':10}  {'Open for':10}")

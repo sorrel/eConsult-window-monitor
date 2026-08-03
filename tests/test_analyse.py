@@ -220,19 +220,37 @@ def test_weekday_stats_still_reports_a_watched_day_that_never_opened():
     assert stats["Saturday"]["floors"] == 0
 
 
-def test_latest_week_is_the_monday_first_week_of_the_newest_day():
+def test_recent_weekdays_rolls_back_over_the_weekend():
+    # Newest day is a Monday: the window is the previous Tue–Fri plus that Monday,
+    # not the Monday on its own.
     days = [
-        _day_summary("2026-07-24", "Friday", []),      # previous week
-        _day_summary("2026-07-27", "Monday", []),      # current week
+        _day_summary("2026-07-27", "Monday", []),      # outside the five-day window
+        _day_summary("2026-07-28", "Tuesday", []),
+        _day_summary("2026-07-29", "Wednesday", []),
+        _day_summary("2026-07-30", "Thursday", []),
         _day_summary("2026-07-31", "Friday", []),
+        _day_summary("2026-08-01", "Saturday", []),    # weekend, never counted
+        _day_summary("2026-08-03", "Monday", []),
     ]
-    monday, week = analyse.latest_week(days)
-    assert monday == "2026-07-27"
-    assert [d["date"] for d in week] == ["2026-07-27", "2026-07-31"]
+    start, week = analyse.recent_weekdays(days)
+    assert start == "2026-07-28"
+    assert [d["date"] for d in week] == [
+        "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-03",
+    ]
 
 
-def test_latest_week_of_nothing_is_empty():
-    assert analyse.latest_week([]) == (None, [])
+def test_recent_weekdays_skips_weekend_days_that_have_data():
+    days = [
+        _day_summary("2026-07-31", "Friday", []),
+        _day_summary("2026-08-01", "Saturday", []),
+        _day_summary("2026-08-02", "Sunday", []),
+    ]
+    _, week = analyse.recent_weekdays(days)
+    assert [d["date"] for d in week] == ["2026-07-31"]
+
+
+def test_recent_weekdays_of_nothing_is_empty():
+    assert analyse.recent_weekdays([]) == (None, [])
 
 
 def test_weekly_report_shows_the_pattern_and_the_latest_week():
