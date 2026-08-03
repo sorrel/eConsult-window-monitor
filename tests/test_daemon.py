@@ -13,12 +13,13 @@ def test_interval_dense_inside_morning_band():
     assert daemon.interval_for(_local(5, 30)) == config.DENSE_INTERVAL
     assert daemon.interval_for(_local(7, 0)) == config.DENSE_INTERVAL
     assert daemon.interval_for(_local(8, 45)) == config.DENSE_INTERVAL  # was background at 08:30 cutoff
-    assert daemon.interval_for(_local(9, 0)) == config.DENSE_INTERVAL
+    assert daemon.interval_for(_local(9, 30)) == config.DENSE_INTERVAL  # was background at 09:00 cutoff
+    assert daemon.interval_for(_local(10, 0)) == config.DENSE_INTERVAL
 
 
 def test_interval_background_outside_band():
     assert daemon.interval_for(_local(5, 29)) == config.BACKGROUND_INTERVAL
-    assert daemon.interval_for(_local(9, 1)) == config.BACKGROUND_INTERVAL
+    assert daemon.interval_for(_local(10, 1)) == config.BACKGROUND_INTERVAL
     assert daemon.interval_for(_local(14, 0)) == config.BACKGROUND_INTERVAL
     assert daemon.interval_for(_local(0, 0)) == config.BACKGROUND_INTERVAL
 

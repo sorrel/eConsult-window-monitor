@@ -48,7 +48,7 @@ REQUEST_TIMEOUT: int = 15  # seconds
 
 # Cadence, expressed in local time. One place to tune the whole schedule.
 DENSE_START: str = "05:30"       # morning band start (local)
-DENSE_END: str = "09:00"         # morning band end (local) — extends past the observed close
+DENSE_END: str = "10:00"         # morning band end (local) — well past the observed close
 DENSE_INTERVAL: int = 20         # seconds between polls inside the band
 BACKGROUND_INTERVAL: int = 1200  # seconds between polls otherwise (20 min)
 ADMIN_INTERVAL: int = 1200       # poll the /admin route at most this often
