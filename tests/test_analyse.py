@@ -165,18 +165,37 @@ def test_weekday_stats_flags_days_left_out_of_the_average():
     stats = analyse.weekday_stats(days)
     assert stats["Monday"]["days"] == 1          # only the reliable Monday counts
     assert stats["Monday"]["floors"] == 1        # the lost one is flagged, not counted
+    assert stats["Monday"]["floor_avg"] == 1800  # but what it did show is kept
     assert stats["Monday"]["avg"] == 1200
     assert stats["Saturday"]["days"] == 0
     assert stats["Saturday"]["no_open"] == 1
     assert stats["Saturday"]["avg"] is None
 
 
+def test_weekday_stats_averages_the_floors_of_days_never_seen_to_close():
+    # Neither Monday completed, so there is no reliable average — but we know
+    # each was open at least this long, and that is worth stating.
+    days = [
+        _day_summary("2026-07-27", "Monday", [("07:00:00", "07:30:00", "lost", 1800)]),
+        _day_summary("2026-08-03", "Monday", [("07:00:00", "08:00:00", "ongoing", 3600)],
+                     partial=True),
+    ]
+    stats = analyse.weekday_stats(days)
+    assert stats["Monday"]["avg"] is None
+    assert stats["Monday"]["days"] == 0
+    assert stats["Monday"]["floors"] == 2
+    assert stats["Monday"]["floor_avg"] == 2700
+
+
 def test_weekday_stats_does_not_call_a_day_still_in_progress_never_open():
-    # Today, nothing open yet: that is 'not yet', not 'never seen open'.
+    # Today, nothing open yet: that is 'not yet', not 'never seen open'. Nothing
+    # was seen open, so there is no floor to state either — just no data.
     days = [_day_summary("2026-08-02", "Sunday", [], partial=True)]
     stats = analyse.weekday_stats(days)
     assert stats["Sunday"]["no_open"] == 0
-    assert stats["Sunday"]["floors"] == 1
+    assert stats["Sunday"]["floors"] == 0
+    assert stats["Sunday"]["floor_avg"] is None
+    assert stats["Sunday"]["unknown"] == 1
 
 
 def test_weekday_stats_excludes_a_day_whose_watch_began_after_the_window():
@@ -185,7 +204,7 @@ def test_weekday_stats_excludes_a_day_whose_watch_began_after_the_window():
     days = [_day_summary("2026-07-22", "Wednesday", [], first_poll="23:10:00")]
     stats = analyse.weekday_stats(days)
     assert stats["Wednesday"]["no_open"] == 0
-    assert stats["Wednesday"]["floors"] == 1
+    assert stats["Wednesday"]["unknown"] == 1
 
 
 def test_weekday_stats_excludes_a_day_of_unknown_coverage():
@@ -228,3 +247,25 @@ def test_weekly_report_shows_the_pattern_and_the_latest_week():
     assert "Latest week" in report
     assert "2026-07-30" in report and "2026-07-31" in report
     assert "2026-07-23" not in report            # an earlier week's row is not in the week table
+
+
+def test_weekly_report_states_the_floor_for_a_weekday_that_never_completed():
+    # The one Monday was still open when we last looked: say how long we know it
+    # was open for rather than printing a dash.
+    days = [_day_summary("2026-08-03", "Monday", [("07:00:00", "08:33:00", "ongoing", 5580)],
+                         partial=True)]
+    report = analyse.weekly_report(days)
+    monday = next(line for line in report.splitlines() if line.startswith("  Monday"))
+    assert "≥ 1h33m" in monday
+    assert "1 day(s) open ≥ 1h33m" in monday
+
+
+def test_weekly_report_keeps_a_completed_average_free_of_floors():
+    days = [
+        _day_summary("2026-07-29", "Wednesday", [("07:00:00", "12:00:00", "closed", 18000)]),
+        _day_summary("2026-08-05", "Wednesday", [("07:00:00", "09:10:00", "lost", 7800)]),
+    ]
+    report = analyse.weekly_report(days)
+    wednesday = next(line for line in report.splitlines() if line.startswith("  Wednesday"))
+    assert "5h00m" in wednesday                   # the average is the completed day alone
+    assert "1 day(s) open ≥ 2h10m, not counted" in wednesday
