@@ -346,19 +346,21 @@ def _pretty_date(day: str) -> str:
 
 def weekly_report(day_summaries: list[dict[str, Any]]) -> str:
     """Plain-text weekly view: the day-of-week pattern, then the latest week."""
-    lines = ["Opening hours — the weekly pattern, averaged across the weeks logged", ""]
-    lines.append(f"  {'Day':10}  {'Avg open':10}  {'Opens at':10}  {'Days':5}  {'Weeks':5}")
-    lines.append(f"  {'-'*10}  {'-'*10}  {'-'*10}  {'-'*5}  {'-'*5}")
-
     stats = weekday_stats(day_summaries)
+    opens_w = opens_at_width(stats)
+
+    lines = ["Opening hours — the weekly pattern, averaged across the weeks logged", ""]
+    lines.append(f"  {'Day':10}  {'Avg open':10}  {'Opens at':{opens_w}}  {'Days':5}  {'Weeks':5}")
+    lines.append(f"  {'-'*10}  {'-'*10}  {'-'*opens_w}  {'-'*5}  {'-'*5}")
+
     for weekday in _WEEKDAY_ORDER:
         if weekday not in stats:
             continue
         row = stats[weekday]
         avg = weekday_avg_cell(row)
-        opens = ", ".join(row["starts"]) if row["starts"] else "—"
+        opens = opens_at_cell(row)
         note = _weekday_note(row)
-        lines.append(f"  {weekday:10}  {avg:10}  {opens:10}  {row['days']:<5}  {row['weeks']:<5}{note}")
+        lines.append(f"  {weekday:10}  {avg:10}  {opens:{opens_w}}  {row['days']:<5}  {row['weeks']:<5}{note}")
 
     start, week = recent_weekdays(day_summaries)
     if week:
@@ -384,6 +386,17 @@ def weekday_avg_cell(row: dict[str, Any]) -> str:
     if row["floor_avg"] is not None:
         return "≥ " + fmt_duration(row["floor_avg"])
     return "—"
+
+
+def opens_at_cell(row: dict[str, Any]) -> str:
+    """The 'Opens at' figure for a weekday — every distinct opening time seen."""
+    return ", ".join(row["starts"]) if row["starts"] else "—"
+
+
+def opens_at_width(stats: dict[str, dict[str, Any]]) -> int:
+    """Width the 'Opens at' column needs: a day that opens twice carries two
+    times, and a fixed width would push the columns after it out of line."""
+    return max([len("Opens at")] + [len(opens_at_cell(r)) for r in stats.values()])
 
 
 def _weekday_note(row: dict[str, Any]) -> str:

@@ -75,21 +75,25 @@ def _render_weekly(days):
     """Day-of-week averages across the weeks logged, then the latest week in full."""
     click.echo(click.style("eConsult opening hours — weekly pattern", fg="green", bold=True))
     click.echo()
-    header = f"  {'Day':10}  {'Avg open':10}  {'Opens at':10}  {'Days':5}  {'Weeks':5}"
-    click.echo(click.style(header, fg="cyan", bold=True))
-    click.echo(click.style("  " + "-" * 50, fg="bright_black"))
-
     stats = analyse.weekday_stats(days)
+    # A day can open more than once, so "Opens at" has to fit the widest cell
+    # we actually have — a fixed width shunts the Days/Weeks columns sideways.
+    opens_w = analyse.opens_at_width(stats)
+
+    header = f"  {'Day':10}  {'Avg open':10}  {'Opens at':{opens_w}}  {'Days':5}  {'Weeks':5}"
+    click.echo(click.style(header, fg="cyan", bold=True))
+    click.echo(click.style("  " + "-" * (40 + opens_w), fg="bright_black"))
+
     for weekday in analyse._WEEKDAY_ORDER:
         if weekday not in stats:
             continue
         row = stats[weekday]
-        opens = ", ".join(row["starts"]) if row["starts"] else "—"
+        opens = analyse.opens_at_cell(row)
         note = analyse._weekday_note(row)
         cell = analyse.weekday_avg_cell(row)
         if row["days"]:
             avg = click.style(f"{cell:10}", fg="green", bold=True)
-            line = (f"  {weekday:10}  {avg}  {opens:10}  {row['days']:<5}  {row['weeks']:<5}"
+            line = (f"  {weekday:10}  {avg}  {opens:{opens_w}}  {row['days']:<5}  {row['weeks']:<5}"
                     + click.style(note, fg="bright_black"))
             click.echo(line)
         elif row["floor_avg"] is not None:
@@ -97,11 +101,11 @@ def _render_weekly(days):
             # table does for a figure that is real but not final.
             avg = click.style(f"{cell:10}", fg="yellow", bold=True)
             line = (click.style(f"  {weekday:10}  ", fg="bright_black") + avg
-                    + click.style(f"  {opens:10}  {row['days']:<5}  {row['weeks']:<5}{note}",
+                    + click.style(f"  {opens:{opens_w}}  {row['days']:<5}  {row['weeks']:<5}{note}",
                                   fg="bright_black"))
             click.echo(line)
         else:   # never seen open, or nothing observed at all — dimmed, not hidden
-            line = f"  {weekday:10}  {cell:10}  {opens:10}  {row['days']:<5}  {row['weeks']:<5}{note}"
+            line = f"  {weekday:10}  {cell:10}  {opens:{opens_w}}  {row['days']:<5}  {row['weeks']:<5}{note}"
             click.echo(click.style(line, fg="bright_black"))
 
     start, week = analyse.recent_weekdays(days)
