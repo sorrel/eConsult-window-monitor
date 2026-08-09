@@ -51,10 +51,13 @@ DENSE_START: str = "05:30"       # morning band start (local)
 DENSE_END: str = "10:00"         # morning band end (local) — well past the observed close
 DENSE_INTERVAL: int = 20         # seconds between polls inside the band
 BACKGROUND_INTERVAL: int = 1200  # seconds between polls otherwise (20 min)
+WEEKEND_INTERVAL: int = 3600     # seconds between polls at a weekend (hourly, all day)
 ADMIN_INTERVAL: int = 1200       # poll the /admin route at most this often
 
-# For the first ~2 weeks, poll EVERY day (incl. weekends) to confirm empirically
-# that the window is closed Sat/Sun. Once confirmed, set WEEKDAYS_ONLY = True to
-# stop polling weekends — polling then runs Mon–Fri only (from 00:01). Monitoring
-# began 2026-07-22, so the earliest sensible flip date is ~2026-08-05.
+# Weekends. The first fortnight polled every day at the weekday cadence to see
+# whether the window ever opens Sat/Sun: across 25–26 Jul, 1–2 Aug and 8 Aug it
+# never did — closed on every one of ~700+ polls a day. From 2026-08-09 weekends
+# drop to WEEKEND_INTERVAL (an hourly spot-check, no dense morning band), which
+# keeps the evidence accumulating at a fraction of the requests. Setting
+# WEEKDAYS_ONLY = True stops weekend polling altogether.
 WEEKDAYS_ONLY: bool = False

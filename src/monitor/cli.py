@@ -85,8 +85,8 @@ def _render_weekly(days):
     click.echo(click.style("  " + "-" * (40 + opens_w), fg="bright_black"))
 
     for weekday in analyse._WEEKDAY_ORDER:
-        if weekday not in stats:
-            continue
+        if weekday not in stats or weekday in analyse._WEEKEND:
+            continue                      # weekends get one line below, not a row each
         row = stats[weekday]
         opens = analyse.opens_at_cell(row)
         note = analyse._weekday_note(row)
@@ -107,6 +107,11 @@ def _render_weekly(days):
         else:   # never seen open, or nothing observed at all — dimmed, not hidden
             line = f"  {weekday:10}  {cell:10}  {opens:{opens_w}}  {row['days']:<5}  {row['weeks']:<5}{note}"
             click.echo(click.style(line, fg="bright_black"))
+
+    weekend = analyse._weekend_line(stats)
+    if weekend:
+        click.echo()
+        click.echo(click.style(weekend, fg="bright_black"))
 
     start, week = analyse.recent_weekdays(days)
     if week:

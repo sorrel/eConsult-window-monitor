@@ -267,6 +267,30 @@ def test_weekly_report_shows_the_pattern_and_the_latest_week():
     assert "2026-07-23" not in report            # an earlier week's row is not in the week table
 
 
+def test_weekly_report_leaves_the_weekend_out_of_the_pattern():
+    # Sat/Sun have never been seen open, so they get a one-line note rather than
+    # a row each; 'econsult view -x' still lists them day by day.
+    days = [
+        _day_summary("2026-07-31", "Friday", [("07:00:00", "08:00:00", "closed", 3600)]),
+        _day_summary("2026-08-01", "Saturday", []),
+        _day_summary("2026-08-02", "Sunday", []),
+    ]
+    report = analyse.weekly_report(days)
+    assert not any(line.startswith(("  Saturday", "  Sunday")) for line in report.splitlines())
+    assert "Weekends: 2 day(s) logged, never seen open" in report
+
+
+def test_weekly_report_says_so_if_a_weekend_day_ever_opens():
+    days = [_day_summary("2026-08-01", "Saturday", [("09:00:00", "10:00:00", "closed", 3600)])]
+    report = analyse.weekly_report(days)
+    assert "Saturday seen open" in report
+
+
+def test_weekly_report_omits_the_weekend_note_when_no_weekend_logged():
+    days = [_day_summary("2026-07-31", "Friday", [("07:00:00", "08:00:00", "closed", 3600)])]
+    assert "Weekends:" not in analyse.weekly_report(days)
+
+
 def test_weekly_report_states_the_floor_for_a_weekday_that_never_completed():
     # The one Monday was still open when we last looked: say how long we know it
     # was open for rather than printing a dash.

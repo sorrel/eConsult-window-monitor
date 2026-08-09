@@ -2,8 +2,10 @@
 
 Reads the daily summaries (completed days) plus today's raw log. By default it
 prints the weekly pattern — total open time averaged per day of the week across
-the weeks logged, then the latest week day by day. With `-x` it prints every
-logged day instead, with running averages. Today is marked partial (in
+the weeks logged, then the latest week day by day. Weekends are summarised in a
+single line there rather than given a row each, since the window has never been
+seen open on a Saturday or Sunday. With `-x` it prints every logged day instead
+(weekends included), with running averages. Today is marked partial (in
 progress), so its duration is shown but excluded from the averages.
 
     uv run python -m monitor.opening_hours       # weekly pattern
