@@ -17,6 +17,9 @@ from .records import Record, day as _day
 
 # Monday-first, matching datetime.weekday() (Monday == 0).
 _WEEKDAY_ORDER = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+# The weekly pattern is a working-week pattern: Sat/Sun get a single summary
+# line instead of a row each (see `_weekend_line`). `-x` still lists every day.
+_WEEKEND = ("Saturday", "Sunday")
 
 _CLINICAL = config.CLINICAL_PATH
 _ADMIN = config.ADMIN_PATH
@@ -354,13 +357,18 @@ def weekly_report(day_summaries: list[dict[str, Any]]) -> str:
     lines.append(f"  {'-'*10}  {'-'*10}  {'-'*opens_w}  {'-'*5}  {'-'*5}")
 
     for weekday in _WEEKDAY_ORDER:
-        if weekday not in stats:
+        if weekday not in stats or weekday in _WEEKEND:
             continue
         row = stats[weekday]
         avg = weekday_avg_cell(row)
         opens = opens_at_cell(row)
         note = _weekday_note(row)
         lines.append(f"  {weekday:10}  {avg:10}  {opens:{opens_w}}  {row['days']:<5}  {row['weeks']:<5}{note}")
+
+    weekend = _weekend_line(stats)
+    if weekend:
+        lines.append("")
+        lines.append(weekend)
 
     start, week = recent_weekdays(day_summaries)
     if week:
@@ -376,6 +384,25 @@ def weekly_report(day_summaries: list[dict[str, Any]]) -> str:
     lines.append(f"  {len(day_summaries)} day(s) logged in total.  "
                  "Run 'econsult view -x' for every day.")
     return "\n".join(lines)
+
+
+def _weekend_line(stats: dict[str, dict[str, Any]]) -> str | None:
+    """The one line the weekend gets, in place of a row each in the pattern.
+
+    Saturday and Sunday have never been seen open, so a full row apiece is two
+    rows of dashes; but the days logged are still evidence, so state how many
+    there are — and say so loudly if one ever does open."""
+    rows = {day: stats[day] for day in _WEEKEND if day in stats}
+    if not rows:
+        return None
+    days = sum(r["days"] + r["floors"] + r["no_open"] + r["unknown"] for r in rows.values())
+    opened = [day for day, r in rows.items() if r["starts"]]
+    if opened:
+        return (f"  Weekends: {days} day(s) logged — {' and '.join(opened)} seen open; "
+                "run 'econsult view -x' for the detail.")
+    unknown = sum(r["unknown"] for r in rows.values())
+    caveat = f" — {unknown} with no data (gap or in progress)" if unknown else ""
+    return f"  Weekends: {days} day(s) logged, never seen open{caveat}."
 
 
 def weekday_avg_cell(row: dict[str, Any]) -> str:
@@ -395,8 +422,11 @@ def opens_at_cell(row: dict[str, Any]) -> str:
 
 def opens_at_width(stats: dict[str, dict[str, Any]]) -> int:
     """Width the 'Opens at' column needs: a day that opens twice carries two
-    times, and a fixed width would push the columns after it out of line."""
-    return max([len("Opens at")] + [len(opens_at_cell(r)) for r in stats.values()])
+    times, and a fixed width would push the columns after it out of line.
+
+    Weekends are measured out — they have no row in the table to size for."""
+    return max([len("Opens at")]
+               + [len(opens_at_cell(r)) for day, r in stats.items() if day not in _WEEKEND])
 
 
 def _weekday_note(row: dict[str, Any]) -> str:

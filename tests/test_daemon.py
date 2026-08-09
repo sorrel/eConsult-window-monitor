@@ -24,6 +24,17 @@ def test_interval_background_outside_band():
     assert daemon.interval_for(_local(0, 0)) == config.BACKGROUND_INTERVAL
 
 
+def test_interval_is_sparse_all_weekend():
+    from datetime import datetime
+    # Sat 25 / Sun 26 July: no dense morning band — an hourly spot-check only,
+    # since the window has never been seen open at a weekend.
+    assert daemon.interval_for(datetime(2026, 7, 25, 7, 0)) == config.WEEKEND_INTERVAL
+    assert daemon.interval_for(datetime(2026, 7, 25, 14, 0)) == config.WEEKEND_INTERVAL
+    assert daemon.interval_for(datetime(2026, 7, 26, 7, 0)) == config.WEEKEND_INTERVAL
+    # Monday morning is dense again.
+    assert daemon.interval_for(datetime(2026, 7, 27, 7, 0)) == config.DENSE_INTERVAL
+
+
 def test_polls_all_days_by_default():
     from datetime import datetime
     # Default (weekdays_only off): weekends still poll — the 2-week verification.

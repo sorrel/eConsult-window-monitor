@@ -14,8 +14,9 @@ closes each day, so the real pattern replaces the guesswork. 🕰️
 ## ✨ How it works
 
 - 🔁 **Polls one public page** — frequently during the likely opening band,
-  sparsely the rest of the day. One sequential `GET` per poll, honest
-  User-Agent, `robots.txt` respected, no JavaScript executed.
+  sparsely the rest of the day, and hourly at weekends (never yet seen open on a
+  Saturday or Sunday). One sequential `GET` per poll, honest User-Agent,
+  `robots.txt` respected, no JavaScript executed.
 - 🚦 **Classifies each poll** as `open`, `closed`, or `unknown` from the page's
   visible text rather than its HTML structure, so a redesign yields `unknown`
   instead of a wrong answer.

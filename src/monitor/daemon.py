@@ -32,7 +32,13 @@ def _parse_hhmm(value: str) -> dtime:
 
 
 def interval_for(now_local: datetime) -> int:
-    """Seconds until the next poll: dense in the morning band, else background."""
+    """Seconds until the next poll: dense in the morning band, else background.
+
+    Weekends get neither — just a sparse all-day spot-check, since the window
+    has never once been seen open on a Saturday or Sunday.
+    """
+    if now_local.weekday() >= 5:  # 5 = Saturday, 6 = Sunday
+        return config.WEEKEND_INTERVAL
     start = _parse_hhmm(config.DENSE_START)
     end = _parse_hhmm(config.DENSE_END)
     current = now_local.time()
