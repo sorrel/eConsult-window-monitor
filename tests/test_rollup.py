@@ -49,6 +49,39 @@ def test_open_blocks_captures_reopens_and_lost_visibility():
     assert blocks[0]["duration_seconds"] == 3240
     assert blocks[1]["end_reason"] == "lost"          # never observed a close
     assert blocks[1]["end_local"] == "2026-07-24T08:19:00+01:00"  # last seen open, a floor
+    assert blocks[1]["bound_local"] is None           # sight never came back: no upper bound
+
+
+def test_lost_block_is_bounded_by_the_next_closed_reading():
+    # Sight is lost mid-open, and when it returns the page is closed: the close
+    # happened somewhere in that gap, so the block carries both ends of it.
+    records = [
+        _rec("2026-08-07T07:00:00+01:00", "open"),
+        _rec("2026-08-07T09:40:00+01:00", "open"),
+        _rec("2026-08-07T09:41:00+01:00", "unknown"),   # gap starts
+        _rec("2026-08-07T15:02:00+01:00", "unknown"),
+        _rec("2026-08-07T15:22:00+01:00", "closed"),    # sight back: already shut
+    ]
+    blocks = rollup.open_blocks(records)
+    assert blocks[0]["end_reason"] == "lost"
+    assert blocks[0]["end_local"] == "2026-08-07T09:40:00+01:00"    # floor
+    assert blocks[0]["bound_local"] == "2026-08-07T15:22:00+01:00"  # ceiling
+
+
+def test_lost_block_bound_skips_an_open_seen_after_the_gap():
+    # Sight returns to an *open* page, so we cannot tell one long window from a
+    # close and a reopen: the only honest ceiling is the next observed close.
+    records = [
+        _rec("2026-08-07T07:00:00+01:00", "open"),
+        _rec("2026-08-07T09:40:00+01:00", "open"),
+        _rec("2026-08-07T09:41:00+01:00", "unknown"),
+        _rec("2026-08-07T15:22:00+01:00", "open"),      # could be the same window
+        _rec("2026-08-07T16:02:00+01:00", "closed"),
+    ]
+    blocks = rollup.open_blocks(records)
+    assert blocks[0]["end_reason"] == "lost"
+    assert blocks[0]["bound_local"] == "2026-08-07T16:02:00+01:00"
+    assert blocks[1]["end_reason"] == "closed"          # the reopen, seen right through
 
 
 def test_open_blocks_still_open_at_end_is_ongoing():
