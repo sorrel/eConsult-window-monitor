@@ -52,6 +52,21 @@ def test_fetch_follows_redirect(server):
     assert result.final_url.endswith("/ok")
 
 
+def test_fetch_main_reports_a_reachable_page(server, monkeypatch, capsys):
+    # The daemon's fresh-process probe: one line, no body, exit 0 on success.
+    monkeypatch.setattr("sys.argv", ["monitor.fetch", f"{server}/ok"])
+    assert fetch.main() == 0
+    out = capsys.readouterr().out
+    assert out.startswith("ok 200")
+    assert "hello" not in out          # the page itself is never printed
+
+
+def test_fetch_main_reports_an_unreachable_page(monkeypatch, capsys):
+    monkeypatch.setattr("sys.argv", ["monitor.fetch", "http://127.0.0.1:1/never"])
+    assert fetch.main() == 1
+    assert capsys.readouterr().out.startswith("fail ")
+
+
 def test_fetch_never_raises_on_connection_error():
     # Nothing listening on this port; must return an error result, not raise.
     result = fetch.fetch("http://127.0.0.1:1/never", "test-agent/0.1", timeout=2)

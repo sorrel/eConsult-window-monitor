@@ -57,8 +57,13 @@ launchd/install.sh     # load the LaunchAgent and start polling
 launchd/uninstall.sh   # remove it (data stays put)
 ```
 
-The daemon abandons a wedged poll under a hard deadline, and exits after
-repeated failures so `launchd` starts a clean process.
+The daemon abandons a wedged poll under a hard deadline, and counts a poll that
+comes back with no reply as a failure too. Whilst polls are failing it retries
+sooner than its background cadence, so the outage is bounded tightly at both
+ends. After a run of failures it asks a fresh subprocess to fetch the page: if
+the child succeeds, this process is the broken one and it exits for `launchd` to
+start a clean one; if the child fails too, the network is simply out and it
+waits rather than relaunching for nothing.
 
 ## 🤖 Live view in Claude Desktop (MCP)
 
