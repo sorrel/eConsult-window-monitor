@@ -54,3 +54,28 @@ def fetch(url: str, user_agent: str, timeout: int = 15) -> FetchResult:
     except Exception as exc:  # connection refused, timeout, DNS, etc.
         latency_ms = int((time.monotonic() - start) * 1000)
         return FetchResult(None, "", latency_ms, url, str(exc))
+
+
+def main() -> int:
+    """`python -m monitor.fetch <url>` — one fetch, reported in a line.
+
+    Prints 'ok <status> <latency>ms' and exits 0, or 'fail <error>' and exits 1.
+    The body is never printed. Exists so the daemon can ask a *fresh process*
+    whether the page is reachable at a moment when its own fetches are failing
+    (see daemon._fresh_process_can_fetch); it writes nothing to the log.
+    """
+    import sys
+
+    from . import config
+
+    url = sys.argv[1] if len(sys.argv) > 1 else config.BASE_URL.rstrip("/") + config.CLINICAL_PATH
+    result = fetch(url, config.USER_AGENT, config.REQUEST_TIMEOUT)
+    if result.error or result.status is None:
+        print(f"fail {result.error or 'no response'}")
+        return 1
+    print(f"ok {result.status} {result.latency_ms}ms")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
