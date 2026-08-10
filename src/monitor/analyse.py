@@ -8,7 +8,7 @@ reads the JSONL log and prints.
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from . import config
@@ -23,6 +23,10 @@ _WEEKEND = ("Saturday", "Sunday")
 
 _CLINICAL = config.CLINICAL_PATH
 _ADMIN = config.ADMIN_PATH
+
+# Width the day table's 'Closed' / 'Open for' columns never go below, so a table
+# of ordinary days looks exactly as it always has.
+_MIN_TIME_COL = 10
 
 
 def _clinical_opens(records: list[Record]) -> list[Record]:
@@ -176,12 +180,41 @@ def _display_blocks(summary: dict[str, Any]) -> list[dict[str, Any]]:
             "end_reason": "closed" if closed_iso else "ongoing",
             "duration_seconds": summary.get("open_duration_seconds"),
         }]
-    return [{
-        "opened": b["start_local"][11:19],
-        "closed": b["end_local"][11:19],
-        "duration": b.get("duration_seconds"),
-        "end_reason": b.get("end_reason", "closed"),
-    } for b in blocks]
+    out = []
+    for b in blocks:
+        bound_iso = _bound_for(summary, b)
+        out.append({
+            "opened": b["start_local"][11:19],
+            "closed": b["end_local"][11:19],
+            "duration": b.get("duration_seconds"),
+            "end_reason": b.get("end_reason", "closed"),
+            "bound": bound_iso[11:19] if bound_iso else None,
+            "bound_duration": (_seconds_between(b["start_local"], bound_iso)
+                               if bound_iso else None),
+        })
+    return out
+
+
+def _seconds_between(start_local: str, end_local: str) -> int:
+    return int((datetime.fromisoformat(end_local) - datetime.fromisoformat(start_local))
+               .total_seconds())
+
+
+def _bound_for(summary: dict[str, Any], block: dict[str, Any]) -> str | None:
+    """The latest a lost block can have closed, or None if nothing bounds it.
+
+    Normally the rollup records this as ``bound_local``. Summaries written
+    before that field existed still carry their transitions, so the same ceiling
+    — the first clinical close after the gap — is recovered from those instead.
+    """
+    if block.get("end_reason") != "lost":
+        return None
+    if "bound_local" in block:
+        return block["bound_local"]
+    end = block["end_local"]
+    return min((t["at_local"] for t in summary.get("transitions") or []
+                if t.get("route") == _CLINICAL and t.get("state") == "closed"
+                and t["at_local"] > end), default=None)
 
 
 def opening_hours_stats(day_summaries: list[dict[str, Any]]) -> dict[str, Any]:
@@ -212,13 +245,38 @@ def opening_hours_stats(day_summaries: list[dict[str, Any]]) -> dict[str, Any]:
 
 def block_cells(block: dict[str, Any]) -> tuple[str, str]:
     """Closed and 'Open for' cell text for one open block, honest about blocks
-    that never had a close observed. Shared by the plain and coloured views."""
+    that never had a close observed. Shared by the plain and coloured views.
+
+    A lost block is shown as the range it must have closed in — from the last
+    poll that saw it open to the first that saw it shut — at minute resolution,
+    since a range to the second reads as more precision than there is. Only when
+    nothing bounds the gap does it fall back to 'lost' and a bare floor.
+    """
     reason = block.get("end_reason", "closed")
     if reason == "closed":
         return block["closed"], fmt_duration(block["duration"])
     if reason == "ongoing":
         return "still open", "≥ " + fmt_duration(block["duration"])
-    return "lost", "≥ " + fmt_duration(block["duration"])  # fetches failed before a close
+    if block.get("bound"):  # fetches failed before a close, but sight came back
+        return (f"{block['closed'][:5]}–{block['bound'][:5]}",
+                f"{fmt_duration(block['duration'])}–{fmt_duration(block['bound_duration'])}")
+    return "lost", "≥ " + fmt_duration(block["duration"])  # never seen shut again
+
+
+def day_table_widths(day_summaries: list[dict[str, Any]]) -> tuple[int, int]:
+    """Widths the 'Closed' and 'Open for' columns need for these days.
+
+    A block bounded rather than seen shut carries a range in both columns, which
+    is wider than a single time or duration; sizing to the content keeps what
+    follows (the '(reopened)' note) in line, as the 'Opens at' column does.
+    """
+    closed_w, duration_w = _MIN_TIME_COL, _MIN_TIME_COL  # never narrower than the usual table
+    for summary in day_summaries:
+        for block in _display_blocks(summary):
+            closed, duration = block_cells(block)
+            closed_w = max(closed_w, len(closed))
+            duration_w = max(duration_w, len(duration))
+    return closed_w, duration_w
 
 
 def day_total_open(summary: dict[str, Any]) -> tuple[int | None, bool]:
@@ -375,8 +433,10 @@ def weekly_report(day_summaries: list[dict[str, Any]]) -> str:
         span = f"{_pretty_date(start)} – {_pretty_date(week[-1]['date'])}"
         lines.append("")
         lines.append(f"  Latest week ({span})")
-        lines.append(f"  {'Date':10}  {'Day':9}  {'Opened':8}  {'Closed':10}  {'Open for':10}")
-        lines.append(f"  {'-'*10}  {'-'*9}  {'-'*8}  {'-'*10}  {'-'*10}")
+        closed_w, dur_w = day_table_widths(week)
+        lines.append(f"  {'Date':10}  {'Day':9}  {'Opened':8}  "
+                     f"{'Closed':{closed_w}}  {'Open for':{dur_w}}")
+        lines.append(f"  {'-'*10}  {'-'*9}  {'-'*8}  {'-'*closed_w}  {'-'*dur_w}")
         for line in _week_table_lines(week):
             lines.append(line)
 
@@ -448,17 +508,19 @@ def _weekday_note(row: dict[str, Any]) -> str:
 
 def _week_table_lines(week: list[dict[str, Any]]) -> list[str]:
     """The day-by-day rows for one week, in the same shape as the full table."""
+    closed_w, dur_w = day_table_widths(week)
     lines = []
     for row in opening_hours_rows(week):
         day_cell = row["weekday"][:3] + ("*" if row["partial"] else "")
         if not row["blocks"]:
-            lines.append(f"  {row['date']:10}  {day_cell:9}  {'—':8}  {'—':10}  {'—':10}")
+            lines.append(f"  {row['date']:10}  {day_cell:9}  {'—':8}  "
+                         f"{'—':{closed_w}}  {'—':{dur_w}}")
             continue
         for i, block in enumerate(row["blocks"]):
             closed, dur = block_cells(block)
             note = "" if i == 0 else "  (reopened)"
             lines.append(f"  {row['date'] if i == 0 else '':10}  {day_cell if i == 0 else '':9}  "
-                         f"{block['opened']:8}  {closed:10}  {dur:10}{note}")
+                         f"{block['opened']:8}  {closed:{closed_w}}  {dur:{dur_w}}{note}")
     return lines
 
 
@@ -466,21 +528,25 @@ def opening_hours_report(day_summaries: list[dict[str, Any]]) -> str:
     """Plain-text running, day-by-day record of how long the window is open.
 
     A day that opened more than once gets one continuation line per reopen."""
+    closed_w, dur_w = day_table_widths(day_summaries)
     lines = ["Opening hours — how long the clinical eConsult window is open each day", ""]
-    lines.append(f"  {'Date':10}  {'Day':9}  {'Opened':8}  {'Closed':10}  {'Open for':10}")
-    lines.append(f"  {'-'*10}  {'-'*9}  {'-'*8}  {'-'*10}  {'-'*10}")
+    lines.append(f"  {'Date':10}  {'Day':9}  {'Opened':8}  "
+                 f"{'Closed':{closed_w}}  {'Open for':{dur_w}}")
+    lines.append(f"  {'-'*10}  {'-'*9}  {'-'*8}  {'-'*closed_w}  {'-'*dur_w}")
 
     for row in opening_hours_rows(day_summaries):
         day_cell = row["weekday"][:3] + ("*" if row["partial"] else "")
         if not row["blocks"]:
-            lines.append(f"  {row['date']:10}  {day_cell:9}  {'—':8}  {'—':10}  {'—':10}")
+            lines.append(f"  {row['date']:10}  {day_cell:9}  {'—':8}  "
+                         f"{'—':{closed_w}}  {'—':{dur_w}}")
             continue
         for i, block in enumerate(row["blocks"]):
             closed, dur = block_cells(block)
             note = "" if i == 0 else "  (reopened)"
             date_cell = row["date"] if i == 0 else ""
             day_col = day_cell if i == 0 else ""
-            lines.append(f"  {date_cell:10}  {day_col:9}  {block['opened']:8}  {closed:10}  {dur:10}{note}")
+            lines.append(f"  {date_cell:10}  {day_col:9}  {block['opened']:8}  "
+                         f"{closed:{closed_w}}  {dur:{dur_w}}{note}")
 
     stats = opening_hours_stats(day_summaries)
     lines.append("")

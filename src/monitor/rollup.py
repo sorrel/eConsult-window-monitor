@@ -74,6 +74,9 @@ def open_blocks(clinical_sorted: list[Record]) -> list[dict[str, Any]]:
     - ``lost`` — the run ran into a gap (fetches failing / 'unknown') before any
       close was observed; ``end_local`` is the last seen open, so
       ``duration_seconds`` is a *floor*, not the true duration. Never guessed.
+      ``bound_local`` is the other end of the gap — the first close observed
+      after it, i.e. the latest the window can have shut (``None`` when sight
+      never came back that day, leaving the close unbounded).
     - ``ongoing`` — still open at the last reading of the data.
 
     ``clinical_sorted`` must be the clinical-route readings sorted by ``ts_local``.
@@ -92,6 +95,7 @@ def open_blocks(clinical_sorted: list[Record]) -> list[dict[str, Any]]:
                 cur["end_local"], cur["end_reason"] = r["ts_local"], "closed"
             else:  # 'unknown' — fetch failed / page unrecognised: we lost sight of it
                 cur["end_local"], cur["end_reason"] = cur["last_open_local"], "lost"
+                cur["bound_local"] = _next_closed_after(clinical_sorted, cur["end_local"])
             cur["duration_seconds"] = _duration_seconds(cur["start_local"], cur["end_local"])
             blocks.append(cur)
             cur = None
@@ -100,6 +104,17 @@ def open_blocks(clinical_sorted: list[Record]) -> list[dict[str, Any]]:
         cur["duration_seconds"] = _duration_seconds(cur["start_local"], cur["end_local"])
         blocks.append(cur)
     return blocks
+
+
+def _next_closed_after(clinical_sorted: list[Record], after_local: str) -> str | None:
+    """The first 'closed' reading after this time — the ceiling on a lost close.
+
+    Deliberately the next *close*, not the next reading of any kind: if sight
+    returns to an open page, that may be the same window still running rather
+    than a fresh one, so only an observed close can bound the old one.
+    """
+    return next((r["ts_local"] for r in clinical_sorted
+                 if r["state"] == "closed" and r["ts_local"] > after_local), None)
 
 
 def summarise_day(records: list[Record], date: str) -> dict[str, Any]:

@@ -77,6 +77,49 @@ def test_opening_hours_report_shows_every_block_and_no_question_mark():
     assert "lost" in report                  # honest about the un-closed block
 
 
+def test_block_cells_state_the_range_a_lost_block_closed_in():
+    # We know it was open at 09:40 and shut by 16:02 — so say so, rather than
+    # throwing the ceiling away and printing 'lost'.
+    cells = analyse.block_cells({
+        "opened": "07:00:05", "closed": "09:40:19", "duration": 9614,
+        "end_reason": "lost", "bound": "16:02:10", "bound_duration": 32525,
+    })
+    assert cells == ("09:40–16:02", "2h40m–9h02m")
+
+
+def test_block_cells_still_say_lost_when_sight_never_returned():
+    cells = analyse.block_cells({
+        "opened": "07:00:15", "closed": "08:17:20", "duration": 4625,
+        "end_reason": "lost", "bound": None, "bound_duration": None,
+    })
+    assert cells == ("lost", "≥ 1h17m")
+
+
+def test_display_blocks_bound_a_lost_block_from_an_old_summary():
+    # Summaries rolled up before bound_local existed still carry their
+    # transitions, so the ceiling can be recovered from those.
+    rows = analyse.opening_hours_rows([{
+        "date": "2026-08-07", "weekday": "Friday",
+        "first_open_local": "2026-08-07T07:00:00+01:00",
+        "open_blocks": [
+            {"start_local": "2026-08-07T07:00:00+01:00",
+             "end_local": "2026-08-07T09:40:00+01:00",
+             "end_reason": "lost", "duration_seconds": 9600},
+        ],
+        "transitions": [
+            {"route": "/", "state": "open", "at_local": "2026-08-07T07:00:00+01:00"},
+            {"route": "/", "state": "unknown", "at_local": "2026-08-07T09:41:00+01:00"},
+            {"route": "/admin", "state": "closed", "at_local": "2026-08-07T09:50:00+01:00"},
+            {"route": "/", "state": "open", "at_local": "2026-08-07T15:22:00+01:00"},
+            {"route": "/", "state": "closed", "at_local": "2026-08-07T16:02:00+01:00"},
+        ],
+    }])
+    block = rows[0]["blocks"][0]
+    assert block["bound"] == "16:02:00"          # the clinical close, not the admin one
+    assert block["bound_duration"] == 32520
+    assert analyse.block_cells(block)[0] == "09:40–16:02"
+
+
 def test_display_blocks_falls_back_for_old_summaries():
     # A summary written before open_blocks existed still yields one block.
     rows = analyse.opening_hours_rows([{

@@ -118,9 +118,9 @@ def _render_weekly(days):
         span = f"{analyse._pretty_date(start)} – {analyse._pretty_date(week[-1]['date'])}"
         click.echo()
         click.echo(click.style(f"  Latest week ({span})", fg="green", bold=True))
-        header = f"  {'Date':10}  {'Day':6}  {'Opened':8}  {'Closed':10}  {'Open for':10}"
+        header, rule = _day_table_header(week)
         click.echo(click.style(header, fg="cyan", bold=True))
-        click.echo(click.style("  " + "-" * 54, fg="bright_black"))
+        click.echo(click.style(rule, fg="bright_black"))
         _render_day_rows(week)
 
     click.echo()
@@ -128,12 +128,21 @@ def _render_weekly(days):
                            "Use -x to see every day.", fg="bright_black"))
 
 
+def _day_table_header(days):
+    """Header and rule for the day table, sized to the widest cells in it."""
+    closed_w, dur_w = analyse.day_table_widths(days)
+    header = (f"  {'Date':10}  {'Day':6}  {'Opened':8}  "
+              f"{'Closed':{closed_w}}  {'Open for':{dur_w}}")
+    return header, "  " + "-" * (len(header) - 2)
+
+
 def _render_day_rows(days):
     """The shared day-by-day table body — one line per open block."""
+    closed_w, dur_w = analyse.day_table_widths(days)
     for row in analyse.opening_hours_rows(days):
         day_cell = row["weekday"][:3] + ("*" if row["partial"] else "")
         if not row["blocks"]:
-            line = f"  {row['date']:10}  {day_cell:6}  {'—':8}  {'—':10}  {'—':10}"
+            line = f"  {row['date']:10}  {day_cell:6}  {'—':8}  {'—':{closed_w}}  {'—':{dur_w}}"
             click.echo(click.style(line, fg="bright_black"))   # no open observed
             continue
         for i, block in enumerate(row["blocks"]):
@@ -141,7 +150,8 @@ def _render_day_rows(days):
             note = "" if i == 0 else "  (reopened)"
             date_cell = row["date"] if i == 0 else ""
             day_col = day_cell if i == 0 else ""
-            line = f"  {date_cell:10}  {day_col:6}  {block['opened']:8}  {closed:10}  {dur:10}{note}"
+            line = (f"  {date_cell:10}  {day_col:6}  {block['opened']:8}  "
+                    f"{closed:{closed_w}}  {dur:{dur_w}}{note}")
             if row["partial"]:
                 click.echo(click.style(line, fg="yellow"))     # today / gap — provisional
             else:
@@ -152,9 +162,9 @@ def _render_all_days(days):
     """Every logged day, with running averages — the original full view."""
     click.echo(click.style("eConsult opening hours", fg="green", bold=True))
     click.echo()
-    header = f"  {'Date':10}  {'Day':6}  {'Opened':8}  {'Closed':10}  {'Open for':10}"
+    header, rule = _day_table_header(days)
     click.echo(click.style(header, fg="cyan", bold=True))
-    click.echo(click.style("  " + "-" * 54, fg="bright_black"))
+    click.echo(click.style(rule, fg="bright_black"))
 
     _render_day_rows(days)
 
