@@ -90,7 +90,10 @@ def test_parse_env_handles_comments_quotes_and_export():
 def test_read_env_file_reads_a_regular_file(tmp_path):
     path = tmp_path / ".env"
     path.write_text("ECONSULT_BASE_URL=https://example.test\n", encoding="utf-8")
-    assert "https://example.test" in config_mod._read_env_file(path)
+    # Compare the parsed value exactly rather than substring-matching the raw
+    # text: a URL that merely *contains* the expected one proves nothing.
+    parsed = config_mod._parse_env(config_mod._read_env_file(path))
+    assert parsed["ECONSULT_BASE_URL"] == "https://example.test"
 
 
 def test_read_env_file_returns_empty_when_absent(tmp_path):
