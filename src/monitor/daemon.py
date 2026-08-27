@@ -174,6 +174,11 @@ def _record_timeout(route_path: str) -> None:
 
 
 def run() -> None:
+    # Nothing to observe without a real target, and polling the placeholder
+    # would masquerade as a permanent outage — every poll failing, the
+    # self-heal relaunching a process that cannot work. Stop instead.
+    config.require_configured()
+
     last_admin_poll = 0.0
     consecutive_failures = 0
     while True:
