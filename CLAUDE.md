@@ -61,6 +61,16 @@ launchd/install.sh               # load the background LaunchAgent
   root (dormant, un-packaged). `pyproject.toml` reflects this:
   `packages = ["src/monitor"]`, `pythonpath = ["src", "."]`. Module and console
   entry points are unchanged (`monitor.cli:cli`, `python -m monitor.<mod>`).
+- **The target URL is resolved in `src/monitor/config.py`**, in precedence
+  order: `ECONSULT_BASE_URL` → `ECONSULT_BASE_URL` in a repo-root `.env` →
+  `target_url.local`. The `.env` is normally a **1Password local-env file**,
+  which is a *FIFO*: it yields its contents only when 1Password is unlocked and
+  the read authorised. `config` is imported at module scope by the CLI and the
+  tests, so it is read **non-blocking, under a deadline** (stdlib only — no
+  `python-dotenv`), falling back to `target_url.local` rather than hanging a
+  boot-time launchd start. Anything unresolved leaves the placeholder, and
+  `config.require_configured()` then aborts loudly rather than letting the
+  monitor poll a domain that does not exist.
 - **Keep this repo out of iCloud.** iCloud hides `.venv` (breaking editable
   installs under Python 3.13) and uploads the local-first `data/`. See
   `../CLAUDE.md` for the full explanation. The repo now lives outside iCloud at

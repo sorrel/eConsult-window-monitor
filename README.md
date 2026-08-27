@@ -31,10 +31,24 @@ Nothing is sent anywhere: the only host contacted is the page you point it at.
 
 ## 🗺️ Place neutral
 
-No surgery is named in this repository. Supply the page locally through the
-`ECONSULT_BASE_URL` environment variable or a one-line `target_url.local` file
-at the repo root (gitignored). Without one, it uses a placeholder. Observed data
-stays in `data/`, also gitignored.
+No surgery is named in this repository. Supply the page locally, in order of
+precedence:
+
+1. the `ECONSULT_BASE_URL` environment variable,
+2. `ECONSULT_BASE_URL` in a `.env` at the repo root, or
+3. a one-line `target_url.local` file at the repo root.
+
+All three are gitignored. Without any of them the tools refuse to run rather
+than quietly polling a placeholder domain. Observed data stays in `data/`, also
+gitignored.
+
+The `.env` may be a [1Password local env file][1p] — a FIFO rather than a
+regular file, which yields its contents only when 1Password is unlocked and the
+read authorised. It is read non-blocking under a short deadline, so a locked
+1Password falls through to `target_url.local` instead of hanging an unattended
+run at boot.
+
+[1p]: https://www.1password.dev/environments/local-env-file
 
 ## 🚀 Quick start
 

@@ -9,6 +9,8 @@ snapshots/
 # --- Secrets / environment ---
 .env
 .env.*
+# ...but the template carries no real value and must stay tracked.
+!.env.example
 *.pem
 *.key
 

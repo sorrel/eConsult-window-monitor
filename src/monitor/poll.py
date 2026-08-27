@@ -69,6 +69,7 @@ def poll_once(
 
 
 def main() -> None:
+    config.require_configured()
     obs = poll_once(config.CLINICAL_PATH)
     print(f"{obs['ts_local']}  {obs['state']}  markers={obs['matched_markers']}")
 
