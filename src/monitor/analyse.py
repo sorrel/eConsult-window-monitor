@@ -12,6 +12,7 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 from . import config
+from . import holidays
 from . import store
 from .records import Record, day as _day
 
@@ -74,6 +75,28 @@ def open_duration_by_day(records: list[Record]) -> list[tuple[str, str, str | No
 
 def _weekday_name(day: str) -> str:
     return _WEEKDAY_ORDER[date.fromisoformat(day).weekday()]
+
+
+def is_bank_holiday_summary(summary: dict[str, Any]) -> bool:
+    """Whether a day summary falls on an England & Wales bank holiday.
+
+    Derived from the date at report time rather than stored, so every day
+    already logged is classified too and no summary needs rewriting."""
+    day = summary.get("date")
+    return bool(day) and holidays.is_bank_holiday(day)
+
+
+def day_cell(row: dict[str, Any]) -> str:
+    """The 'Day' column's text: 'Mon', with '*' for a partial day and 'BH' for a
+    bank holiday — the label that keeps a closed Monday from reading as a
+    surgery that sometimes just does not open."""
+    cell = row["weekday"][:3] + ("*" if row["partial"] else "")
+    return cell + " BH" if row.get("bank_holiday") else cell
+
+
+def day_col_width(day_summaries: list[dict[str, Any]], minimum: int) -> int:
+    """Width the 'Day' column needs — a bank holiday's label is wider than 'Mon'."""
+    return max([minimum] + [len(day_cell(r)) for r in opening_hours_rows(day_summaries)])
 
 
 def weekday_open_times(records: list[Record]) -> list[tuple[str, str]]:
@@ -159,6 +182,7 @@ def opening_hours_rows(day_summaries: list[dict[str, Any]]) -> list[dict[str, An
             "has_open": bool(opened_iso),
             "duration": summary.get("open_duration_seconds"),
             "partial": bool(summary.get("partial")),
+            "bank_holiday": is_bank_holiday_summary(summary),
             "blocks": _display_blocks(summary),
         })
     return rows
@@ -222,7 +246,13 @@ def opening_hours_stats(day_summaries: list[dict[str, Any]]) -> dict[str, Any]:
     reliable: list[int] = []
     by_weekday: dict[str, list[int]] = defaultdict(list)
     open_times: list[str] = []
+    bank_holidays = 0
     for summary in day_summaries:
+        # A bank holiday is a different kind of day, not a short Monday: it is
+        # counted on its own line and left out of every average here.
+        if is_bank_holiday_summary(summary):
+            bank_holidays += 1
+            continue
         if summary.get("first_open_local"):
             open_times.append(summary["first_open_local"][11:16])
         duration = summary.get("open_duration_seconds")
@@ -232,6 +262,7 @@ def opening_hours_stats(day_summaries: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "days_logged": len(day_summaries),
         "days_with_open": sum(1 for s in day_summaries if s.get("first_open_local")),
+        "bank_holidays": bank_holidays,
         "reliable_count": len(reliable),
         "avg": sum(reliable) // len(reliable) if reliable else None,
         "shortest": min(reliable) if reliable else None,
@@ -341,6 +372,8 @@ def weekday_stats(day_summaries: list[dict[str, Any]]) -> dict[str, dict[str, An
     starts: dict[str, set[str]] = defaultdict(set)
 
     for summary in day_summaries:
+        if is_bank_holiday_summary(summary):
+            continue    # counted by `bank_holiday_line`, never in a weekday's average
         weekday = summary.get("weekday") or "?"
         opened = summary.get("first_open_local")
         if opened:
@@ -428,15 +461,21 @@ def weekly_report(day_summaries: list[dict[str, Any]]) -> str:
         lines.append("")
         lines.append(weekend)
 
+    bank_holidays = bank_holiday_line(day_summaries)
+    if bank_holidays:
+        lines.append("")
+        lines.append(bank_holidays)
+
     start, week = recent_weekdays(day_summaries)
     if week:
         span = f"{_pretty_date(start)} – {_pretty_date(week[-1]['date'])}"
         lines.append("")
         lines.append(f"  Latest week ({span})")
         closed_w, dur_w = day_table_widths(week)
-        lines.append(f"  {'Date':10}  {'Day':9}  {'Opened':8}  "
+        day_w = day_col_width(week, 9)
+        lines.append(f"  {'Date':10}  {'Day':{day_w}}  {'Opened':8}  "
                      f"{'Closed':{closed_w}}  {'Open for':{dur_w}}")
-        lines.append(f"  {'-'*10}  {'-'*9}  {'-'*8}  {'-'*closed_w}  {'-'*dur_w}")
+        lines.append(f"  {'-'*10}  {'-'*day_w}  {'-'*8}  {'-'*closed_w}  {'-'*dur_w}")
         for line in _week_table_lines(week):
             lines.append(line)
 
@@ -463,6 +502,25 @@ def _weekend_line(stats: dict[str, dict[str, Any]]) -> str | None:
     unknown = sum(r["unknown"] for r in rows.values())
     caveat = f" — {unknown} with no data (gap or in progress)" if unknown else ""
     return f"  Weekends: {days} day(s) logged, never seen open{caveat}."
+
+
+def bank_holiday_line(day_summaries: list[dict[str, Any]]) -> str | None:
+    """The one line bank holidays get, alongside the weekend's.
+
+    A bank holiday is a closed Monday that says nothing about Mondays, so it is
+    kept out of the weekday averages entirely — but the days are still evidence,
+    so they are counted here and named. If one ever *is* seen open, say so
+    loudly: that would be the finding, not the footnote."""
+    days = [s for s in day_summaries if is_bank_holiday_summary(s)]
+    if not days:
+        return None
+    opened = [s for s in days if s.get("first_open_local")]
+    named = ", ".join(f"{_pretty_date(s['date'])} ({holidays.name_for(s['date'])})"
+                      for s in (opened or days))
+    if opened:
+        return (f"  Bank holidays: {len(days)} day(s) logged — {named} seen open; "
+                "run 'econsult view -x' for the detail.")
+    return f"  Bank holidays: {len(days)} day(s) logged, never seen open — {named}."
 
 
 def weekday_avg_cell(row: dict[str, Any]) -> str:
@@ -509,17 +567,18 @@ def _weekday_note(row: dict[str, Any]) -> str:
 def _week_table_lines(week: list[dict[str, Any]]) -> list[str]:
     """The day-by-day rows for one week, in the same shape as the full table."""
     closed_w, dur_w = day_table_widths(week)
+    day_w = day_col_width(week, 9)
     lines = []
     for row in opening_hours_rows(week):
-        day_cell = row["weekday"][:3] + ("*" if row["partial"] else "")
+        cell = day_cell(row)
         if not row["blocks"]:
-            lines.append(f"  {row['date']:10}  {day_cell:9}  {'—':8}  "
+            lines.append(f"  {row['date']:10}  {cell:{day_w}}  {'—':8}  "
                          f"{'—':{closed_w}}  {'—':{dur_w}}")
             continue
         for i, block in enumerate(row["blocks"]):
             closed, dur = block_cells(block)
             note = "" if i == 0 else "  (reopened)"
-            lines.append(f"  {row['date'] if i == 0 else '':10}  {day_cell if i == 0 else '':9}  "
+            lines.append(f"  {row['date'] if i == 0 else '':10}  {cell if i == 0 else '':{day_w}}  "
                          f"{block['opened']:8}  {closed:{closed_w}}  {dur:{dur_w}}{note}")
     return lines
 
@@ -529,23 +588,24 @@ def opening_hours_report(day_summaries: list[dict[str, Any]]) -> str:
 
     A day that opened more than once gets one continuation line per reopen."""
     closed_w, dur_w = day_table_widths(day_summaries)
+    day_w = day_col_width(day_summaries, 9)
     lines = ["Opening hours — how long the clinical eConsult window is open each day", ""]
-    lines.append(f"  {'Date':10}  {'Day':9}  {'Opened':8}  "
+    lines.append(f"  {'Date':10}  {'Day':{day_w}}  {'Opened':8}  "
                  f"{'Closed':{closed_w}}  {'Open for':{dur_w}}")
-    lines.append(f"  {'-'*10}  {'-'*9}  {'-'*8}  {'-'*closed_w}  {'-'*dur_w}")
+    lines.append(f"  {'-'*10}  {'-'*day_w}  {'-'*8}  {'-'*closed_w}  {'-'*dur_w}")
 
     for row in opening_hours_rows(day_summaries):
-        day_cell = row["weekday"][:3] + ("*" if row["partial"] else "")
+        cell = day_cell(row)
         if not row["blocks"]:
-            lines.append(f"  {row['date']:10}  {day_cell:9}  {'—':8}  "
+            lines.append(f"  {row['date']:10}  {cell:{day_w}}  {'—':8}  "
                          f"{'—':{closed_w}}  {'—':{dur_w}}")
             continue
         for i, block in enumerate(row["blocks"]):
             closed, dur = block_cells(block)
             note = "" if i == 0 else "  (reopened)"
             date_cell = row["date"] if i == 0 else ""
-            day_col = day_cell if i == 0 else ""
-            lines.append(f"  {date_cell:10}  {day_col:9}  {block['opened']:8}  "
+            day_col = cell if i == 0 else ""
+            lines.append(f"  {date_cell:10}  {day_col:{day_w}}  {block['opened']:8}  "
                          f"{closed:{closed_w}}  {dur:{dur_w}}{note}")
 
     stats = opening_hours_stats(day_summaries)
@@ -567,6 +627,9 @@ def opening_hours_report(day_summaries: list[dict[str, Any]]) -> str:
             if weekday in stats["by_weekday"]:
                 lines.append(f"     {weekday:9} {fmt_duration(stats['by_weekday'][weekday])}"
                              f"  ({stats['weekday_counts'][weekday]} day(s))")
+    if stats["bank_holidays"]:
+        lines.append(f"  BH bank holiday ({stats['bank_holidays']} logged) — "
+                     "kept out of the averages, as weekends are")
     if any(s.get("partial") for s in day_summaries):
         lines.append("  * partial day (in progress or a logging gap) — duration not counted in averages")
     return "\n".join(lines)

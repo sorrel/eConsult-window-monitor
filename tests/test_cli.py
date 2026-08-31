@@ -119,3 +119,50 @@ def test_status_shows_latest(tmp_path, monkeypatch):
     result = CliRunner().invoke(cli.cli, ["status"])
     assert result.exit_code == 0
     assert "OPEN" in result.output
+
+
+def test_view_labels_a_bank_holiday_and_keeps_it_out_of_the_weekday_row(tmp_path, monkeypatch):
+    # Mon 31 Aug 2026 is the summer bank holiday. The ordinary Monday before it
+    # opened for an hour; the bank holiday never opened. Monday's row must show
+    # the one ordinary day, and the closed bank holiday must be labelled and
+    # accounted for on its own line rather than as "never seen open" on Monday.
+    summary = tmp_path / "summary.jsonl"
+    store.append_json({
+        "date": "2026-08-24", "weekday": "Monday",
+        "first_poll_local": "2026-08-24T00:00:41+01:00",
+        "first_open_local": "2026-08-24T07:00:00+01:00",
+        "open_blocks": [{
+            "start_local": "2026-08-24T07:00:00+01:00",
+            "end_local": "2026-08-24T08:00:00+01:00",
+            "end_reason": "closed", "duration_seconds": 3600,
+        }],
+    }, summary)
+    store.append_json({
+        "date": "2026-08-31", "weekday": "Monday",
+        "first_poll_local": "2026-08-31T00:00:41+01:00",
+        "first_open_local": None, "open_blocks": [],
+    }, summary)
+    monkeypatch.setattr(config, "SUMMARY_PATH", summary)
+    monkeypatch.setattr(config, "LOG_PATH", tmp_path / "obs.jsonl")
+
+    result = CliRunner().invoke(cli.cli, ["view"])
+    assert result.exit_code == 0
+    assert "Bank holidays: 1 day(s) logged, never seen open" in result.output
+    assert "Summer bank holiday" in result.output
+    assert "never seen open)" not in result.output.split("Bank holidays")[0]
+    assert "Mon BH" in result.output
+
+
+def test_view_everything_explains_the_bank_holiday_marker(tmp_path, monkeypatch):
+    summary = tmp_path / "summary.jsonl"
+    store.append_json({
+        "date": "2026-08-31", "weekday": "Monday",
+        "first_poll_local": "2026-08-31T00:00:41+01:00",
+        "first_open_local": None, "open_blocks": [],
+    }, summary)
+    monkeypatch.setattr(config, "SUMMARY_PATH", summary)
+    monkeypatch.setattr(config, "LOG_PATH", tmp_path / "obs.jsonl")
+    result = CliRunner().invoke(cli.cli, ["view", "-x"])
+    assert result.exit_code == 0
+    assert "BH bank holiday (1 logged)" in result.output
+    assert "kept out of the averages" in result.output

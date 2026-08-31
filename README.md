@@ -14,8 +14,9 @@ closes each day, so the real pattern replaces the guesswork. 🕰️
 ## ✨ How it works
 
 - 🔁 **Polls one public page** — frequently during the likely opening band,
-  sparsely the rest of the day, and hourly at weekends (never yet seen open on a
-  Saturday or Sunday). One sequential `GET` per poll, honest User-Agent,
+  sparsely the rest of the day, and hourly at weekends and on bank holidays
+  (never yet seen open on a Saturday or Sunday). One sequential `GET` per poll,
+  honest User-Agent,
   `robots.txt` respected, no JavaScript executed.
 - 🚦 **Classifies each poll** as `open`, `closed`, or `unknown` from the page's
   visible text rather than its HTML structure, so a redesign yields `unknown`
@@ -23,7 +24,10 @@ closes each day, so the real pattern replaces the guesswork. 🕰️
 - 📓 **Logs everything locally** to JSONL, rolling each finished day up into a
   one-line summary.
 - 📈 **Reports the pattern** — typical open and close times, how long the window
-  stays open, and how much the sample size supports that.
+  stays open, and how much the sample size supports that. Weekends and bank
+  holidays are counted and named on their own lines rather than dragged through
+  a weekday's average, so a shut Easter Monday never reads as an ordinary Monday
+  the surgery happened not to open.
 - 🖥️ **Answers live questions** through an optional read-only MCP server, so you
   can ask "is the window open?" in Claude Desktop.
 

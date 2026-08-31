@@ -354,3 +354,76 @@ def test_weekly_report_keeps_a_completed_average_free_of_floors():
     wednesday = next(line for line in report.splitlines() if line.startswith("  Wednesday"))
     assert "5h00m" in wednesday                   # the average is the completed day alone
     assert "1 day(s) open ≥ 2h10m, not counted" in wednesday
+
+
+def _closed_day(date_: str, weekday: str) -> dict:
+    """A day we watched right through and never saw open."""
+    return {
+        "date": date_, "weekday": weekday,
+        "first_poll_local": f"{date_}T00:00:41+01:00",
+        "first_open_local": None, "open_blocks": [],
+    }
+
+
+def _open_day(date_: str, weekday: str, seconds: int = 3600) -> dict:
+    opened = f"{date_}T07:00:00+01:00"
+    closed = f"{date_}T08:00:00+01:00"
+    return {
+        "date": date_, "weekday": weekday,
+        "first_poll_local": f"{date_}T00:00:41+01:00",
+        "first_open_local": opened, "closed_after_open_local": closed,
+        "open_duration_seconds": seconds,
+        "open_blocks": [{"start_local": opened, "end_local": closed,
+                         "end_reason": "closed", "duration_seconds": seconds}],
+    }
+
+
+def test_bank_holiday_is_kept_out_of_its_weekday_counts():
+    # Mon 31 Aug 2026 is the summer bank holiday: closed all day, but that says
+    # nothing about ordinary Mondays, so it must not land in Monday's counters.
+    days = [_open_day("2026-08-24", "Monday"), _closed_day("2026-08-31", "Monday")]
+    monday = analyse.weekday_stats(days)["Monday"]
+    assert monday["days"] == 1
+    assert monday["no_open"] == 0
+    assert monday["unknown"] == 0
+
+
+def test_bank_holiday_line_reports_the_days_set_aside():
+    days = [_open_day("2026-08-24", "Monday"), _closed_day("2026-08-31", "Monday")]
+    line = analyse.bank_holiday_line(days)
+    assert "1 day(s) logged" in line
+    assert "never seen open" in line
+    assert "Summer bank holiday" in line
+
+
+def test_bank_holiday_line_is_absent_when_no_bank_holiday_was_logged():
+    assert analyse.bank_holiday_line([_open_day("2026-08-24", "Monday")]) is None
+
+
+def test_bank_holiday_line_says_so_loudly_when_one_opened():
+    days = [_open_day("2026-08-31", "Monday")]
+    line = analyse.bank_holiday_line(days)
+    assert "seen open" in line and "never" not in line
+
+
+def test_bank_holiday_day_is_flagged_and_labelled_in_the_day_table():
+    row = analyse.opening_hours_rows([_closed_day("2026-08-31", "Monday")])[0]
+    assert row["bank_holiday"] is True
+    assert analyse.day_cell(row) == "Mon BH"
+
+
+def test_partial_marker_and_bank_holiday_label_coexist():
+    day = _closed_day("2026-08-31", "Monday") | {"partial": True}
+    assert analyse.day_cell(analyse.opening_hours_rows([day])[0]) == "Mon* BH"
+
+
+def test_weekly_report_includes_the_bank_holiday_line():
+    days = [_open_day("2026-08-24", "Monday"), _closed_day("2026-08-31", "Monday")]
+    assert "Bank holidays:" in analyse.weekly_report(days)
+
+
+def test_bank_holidays_are_excluded_from_the_by_weekday_aggregate():
+    days = [_open_day("2026-08-24", "Monday"), _open_day("2026-08-31", "Monday", 60)]
+    stats = analyse.opening_hours_stats(days)
+    assert stats["by_weekday"]["Monday"] == 3600      # the bank holiday's 60s left out
+    assert stats["bank_holidays"] == 1
