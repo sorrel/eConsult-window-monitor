@@ -113,6 +113,11 @@ def _render_weekly(days):
         click.echo()
         click.echo(click.style(weekend, fg="bright_black"))
 
+    bank_holidays = analyse.bank_holiday_line(days)
+    if bank_holidays:
+        click.echo()
+        click.echo(click.style(bank_holidays, fg="bright_black"))
+
     start, week = analyse.recent_weekdays(days)
     if week:
         span = f"{analyse._pretty_date(start)} – {analyse._pretty_date(week[-1]['date'])}"
@@ -131,7 +136,8 @@ def _render_weekly(days):
 def _day_table_header(days):
     """Header and rule for the day table, sized to the widest cells in it."""
     closed_w, dur_w = analyse.day_table_widths(days)
-    header = (f"  {'Date':10}  {'Day':6}  {'Opened':8}  "
+    day_w = analyse.day_col_width(days, 6)
+    header = (f"  {'Date':10}  {'Day':{day_w}}  {'Opened':8}  "
               f"{'Closed':{closed_w}}  {'Open for':{dur_w}}")
     return header, "  " + "-" * (len(header) - 2)
 
@@ -139,18 +145,19 @@ def _day_table_header(days):
 def _render_day_rows(days):
     """The shared day-by-day table body — one line per open block."""
     closed_w, dur_w = analyse.day_table_widths(days)
+    day_w = analyse.day_col_width(days, 6)
     for row in analyse.opening_hours_rows(days):
-        day_cell = row["weekday"][:3] + ("*" if row["partial"] else "")
+        cell = analyse.day_cell(row)
         if not row["blocks"]:
-            line = f"  {row['date']:10}  {day_cell:6}  {'—':8}  {'—':{closed_w}}  {'—':{dur_w}}"
+            line = f"  {row['date']:10}  {cell:{day_w}}  {'—':8}  {'—':{closed_w}}  {'—':{dur_w}}"
             click.echo(click.style(line, fg="bright_black"))   # no open observed
             continue
         for i, block in enumerate(row["blocks"]):
             closed, dur = analyse.block_cells(block)
             note = "" if i == 0 else "  (reopened)"
             date_cell = row["date"] if i == 0 else ""
-            day_col = day_cell if i == 0 else ""
-            line = (f"  {date_cell:10}  {day_col:6}  {block['opened']:8}  "
+            day_col = cell if i == 0 else ""
+            line = (f"  {date_cell:10}  {day_col:{day_w}}  {block['opened']:8}  "
                     f"{closed:{closed_w}}  {dur:{dur_w}}{note}")
             if row["partial"]:
                 click.echo(click.style(line, fg="yellow"))     # today / gap — provisional
@@ -189,6 +196,9 @@ def _render_all_days(days):
                 click.echo(f"     {weekday:9} "
                            f"{click.style(analyse.fmt_duration(stats['by_weekday'][weekday]), fg='green')}"
                            f"  ({stats['weekday_counts'][weekday]} day)")
+    if stats["bank_holidays"]:
+        click.echo(click.style(f"  BH bank holiday ({stats['bank_holidays']} logged) — "
+                               "kept out of the averages, as weekends are", fg="bright_black"))
     if any(row["partial"] for row in analyse.opening_hours_rows(days)):
         click.echo(click.style("  * provisional day — excluded from averages", fg="bright_black"))
 

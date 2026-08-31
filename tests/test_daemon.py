@@ -116,3 +116,22 @@ def test_recovery_stays_put_when_the_network_itself_is_down(monkeypatch):
     monkeypatch.setattr(daemon.os, "_exit", lambda code: exits.append(code))
     daemon._recover(10)
     assert exits == []
+
+
+def test_interval_is_sparse_on_a_bank_holiday():
+    from datetime import datetime
+    # Mon 31 Aug 2026, the summer bank holiday: a weekday by the calendar, but
+    # the surgery is shut, so it gets the weekend's hourly spot-check rather
+    # than the dense morning band.
+    assert daemon.interval_for(datetime(2026, 8, 31, 7, 0)) == config.WEEKEND_INTERVAL
+    assert daemon.interval_for(datetime(2026, 8, 31, 14, 0)) == config.WEEKEND_INTERVAL
+    # The Monday before it is an ordinary working day.
+    assert daemon.interval_for(datetime(2026, 8, 24, 7, 0)) == config.DENSE_INTERVAL
+
+
+def test_weekdays_only_skips_bank_holidays_too():
+    from datetime import datetime
+    assert daemon.should_poll(datetime(2026, 8, 31, 7, 0), weekdays_only=True) is False
+    assert daemon.should_poll(datetime(2026, 8, 24, 7, 0), weekdays_only=True) is True
+    # Default (weekdays-only off) still polls the bank holiday, sparsely.
+    assert daemon.should_poll(datetime(2026, 8, 31, 7, 0), weekdays_only=False) is True

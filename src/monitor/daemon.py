@@ -30,6 +30,7 @@ import time
 from datetime import datetime, time as dtime
 
 from . import config
+from . import holidays
 from . import poll
 from . import rollup
 from . import store
@@ -45,13 +46,20 @@ def _parse_hhmm(value: str) -> dtime:
     return dtime(int(hour), int(minute))
 
 
+def _is_closed_day(now_local: datetime) -> bool:
+    """A day the surgery is shut: a weekend, or an England & Wales bank holiday."""
+    return now_local.weekday() >= 5 or holidays.is_bank_holiday(now_local.date())
+
+
 def interval_for(now_local: datetime) -> int:
     """Seconds until the next poll: dense in the morning band, else background.
 
-    Weekends get neither — just a sparse all-day spot-check, since the window
-    has never once been seen open on a Saturday or Sunday.
+    Weekends and bank holidays get neither — just a sparse all-day spot-check,
+    since the window has never once been seen open on a Saturday or Sunday, and
+    a bank holiday is a closed day too. The evidence still accrues hourly, at a
+    fraction of the requests.
     """
-    if now_local.weekday() >= 5:  # 5 = Saturday, 6 = Sunday
+    if _is_closed_day(now_local):
         return config.WEEKEND_INTERVAL
     start = _parse_hhmm(config.DENSE_START)
     end = _parse_hhmm(config.DENSE_END)
@@ -62,11 +70,11 @@ def interval_for(now_local: datetime) -> int:
 
 
 def should_poll(now_local: datetime, weekdays_only: bool | None = None) -> bool:
-    """Whether to poll now. When weekdays-only is on, skip Saturday and Sunday
-    (the window is closed then); otherwise always poll."""
+    """Whether to poll now. When weekdays-only is on, skip the days the window
+    is closed anyway — Saturday, Sunday, and bank holidays; otherwise poll."""
     if weekdays_only is None:
         weekdays_only = config.WEEKDAYS_ONLY
-    if weekdays_only and now_local.weekday() >= 5:  # 5 = Saturday, 6 = Sunday
+    if weekdays_only and _is_closed_day(now_local):
         return False
     return True
 
@@ -191,7 +199,8 @@ def run() -> None:
 
         now_local = datetime.now().astimezone()
         if not should_poll(now_local):
-            # Weekend, weekdays-only mode: idle without polling, re-check soon.
+            # A closed day (weekend or bank holiday) in weekdays-only mode:
+            # idle without polling, re-check soon.
             time.sleep(config.BACKGROUND_INTERVAL)
             continue
 
