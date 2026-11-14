@@ -15,3 +15,15 @@ updates:
         patterns: ["*"]
     commit-message:
       prefix: "deps"
+
+  # Keeps the SHA-pinned actions in tests.yml current (the "# vX.Y.Z" comment
+  # beside each pin is updated with it).
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    groups:
+      github-actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "ci"
